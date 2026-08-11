@@ -63,6 +63,29 @@ const achievementRow = (row: Record<string, unknown>) => ({
   decisionNumber: row.decision_number, role: row.role, notes: row.notes, createdAt: row.created_at, updatedAt: row.updated_at
 });
 
+async function getRewardCandidates(env: Bindings, year: number) {
+  const rules = await env.DB.prepare("SELECT * FROM reward_rules WHERE active=1 ORDER BY priority DESC").all<Record<string, unknown>>();
+  const candidates: Array<Record<string, unknown>> = [];
+  for (const rule of rules.results) {
+    const conditions = JSON.parse(String(rule.conditions_json)) as { all?: { type: string; level: string }[] };
+    const all = conditions.all ?? [];
+    if (!all.length) continue;
+    const clauses = all.map(() => "EXISTS (SELECT 1 FROM achievements a WHERE a.employee_id=e.id AND a.type=? AND a.level=? AND a.year<=?)");
+    const binds = all.flatMap((condition) => [condition.type, condition.level, year]);
+    const rows = await env.DB.prepare(`SELECT e.id,e.citizen_id,e.full_name,e.unit FROM employees e WHERE e.active=1 AND ${clauses.join(" AND ")} ORDER BY e.full_name`).bind(...binds).all<Record<string, unknown>>();
+    for (const employee of rows.results) {
+      candidates.push({
+        ruleId: rule.id,
+        ruleName: rule.name,
+        rewardType: rule.reward_type,
+        rewardLevel: rule.reward_level,
+        employee: { id: employee.id, citizenId: employee.citizen_id, fullName: employee.full_name, unit: employee.unit }
+      });
+    }
+  }
+  return candidates;
+}
+
 app.get("/health", (c) => c.json({ ok: true, service: "thong-nhat-rewards-api" }));
 
 app.post("/api/auth/bootstrap", async (c) => {
@@ -104,15 +127,20 @@ app.get("/api/me", (c) => c.json({ user: c.get("user") }));
 
 app.get("/api/dashboard", async (c) => {
   const year = Number(c.req.query("year")) || new Date().getFullYear();
-  const [employeeCount, achievementCount, unitCount, pendingCandidates, recent] = await Promise.all([
+  const [employeeCount, achievementCount, unitCount, monthlyRows, recentRows, candidates] = await Promise.all([
     c.env.DB.prepare("SELECT COUNT(*) AS value FROM employees WHERE active = 1").first<{ value: number }>(),
     c.env.DB.prepare("SELECT COUNT(*) AS value FROM achievements WHERE year = ?").bind(year).first<{ value: number }>(),
     c.env.DB.prepare("SELECT COUNT(DISTINCT unit) AS value FROM employees WHERE active = 1").first<{ value: number }>(),
-    c.env.DB.prepare("SELECT COUNT(DISTINCT employee_id) AS value FROM achievements WHERE year BETWEEN ? AND ?").bind(year - 5, year).first<{ value: number }>(),
-    c.env.DB.prepare(`SELECT a.*, e.full_name, e.citizen_id FROM achievements a JOIN employees e ON e.id=a.employee_id ORDER BY a.created_at DESC LIMIT 6`).all<Record<string, unknown>>()
+    c.env.DB.prepare("SELECT CAST(strftime('%m', accepted_date) AS INTEGER) AS month, COUNT(*) AS value FROM achievements WHERE year=? GROUP BY month ORDER BY month").bind(year).all<{ month: number; value: number }>(),
+    c.env.DB.prepare("SELECT a.*,e.full_name,e.citizen_id FROM achievements a JOIN employees e ON e.id=a.employee_id ORDER BY a.created_at DESC LIMIT 6").all<Record<string, unknown>>(),
+    getRewardCandidates(c.env, year)
   ]);
+  const monthly = Array.from({ length: 12 }, () => 0);
+  for (const row of monthlyRows.results) if (row.month >= 1 && row.month <= 12) monthly[row.month - 1] = row.value;
+  const candidateEmployees = new Set(candidates.map((candidate) => String((candidate.employee as Record<string, unknown>).id)));
   return c.json({ year, employees: employeeCount?.value ?? 0, achievements: achievementCount?.value ?? 0,
-    units: unitCount?.value ?? 0, candidates: pendingCandidates?.value ?? 0, recent: recent.results });
+    units: unitCount?.value ?? 0, candidates: candidateEmployees.size, monthly,
+    recent: recentRows.results.map((row) => ({ ...achievementRow(row), fullName: row.full_name, citizenId: row.citizen_id })) });
 });
 
 app.get("/api/employees", async (c) => {
@@ -260,16 +288,7 @@ app.get("/api/attachments/:id", async (c) => {
 
 app.get("/api/reward-candidates", async (c) => {
   const year = Number(c.req.query("year")) || new Date().getFullYear();
-  const rules = await c.env.DB.prepare("SELECT * FROM reward_rules WHERE active=1 ORDER BY priority DESC").all<Record<string, unknown>>();
-  const candidates: unknown[] = [];
-  for (const rule of rules.results) {
-    const conditions = JSON.parse(String(rule.conditions_json)) as { all?: { type: string; level: string }[] };
-    const all = conditions.all ?? []; if (!all.length) continue;
-    const clauses = all.map(() => "EXISTS (SELECT 1 FROM achievements a WHERE a.employee_id=e.id AND a.type=? AND a.level=? AND a.year<=?)");
-    const binds = all.flatMap((x) => [x.type, x.level, year]);
-    const rows = await c.env.DB.prepare(`SELECT e.id,e.citizen_id,e.full_name,e.unit FROM employees e WHERE e.active=1 AND ${clauses.join(" AND ")} ORDER BY e.full_name`).bind(...binds).all();
-    for (const employee of rows.results) candidates.push({ ruleId: rule.id, ruleName: rule.name, rewardType: rule.reward_type, rewardLevel: rule.reward_level, employee });
-  }
+  const candidates = await getRewardCandidates(c.env, year);
   return c.json({ year, candidates });
 });
 
@@ -310,18 +329,53 @@ app.delete("/api/reward-rules/:id", requireRole(["ADMIN"]), async (c) => {
 });
 
 app.get("/api/users", requireRole(["ADMIN"]), async (c) => {
-  const rows = await c.env.DB.prepare("SELECT id,username,display_name,role,active,created_at FROM users ORDER BY display_name").all();
-  return c.json({ items: rows.results });
+  const rows = await c.env.DB.prepare("SELECT id,username,display_name,role,active,created_at,updated_at FROM users ORDER BY active DESC,display_name").all<Record<string, unknown>>();
+  const counts: Record<Role, number> & { total: number; active: number } = { ADMIN: 0, HR: 0, REVIEWER: 0, VIEWER: 0, total: rows.results.length, active: 0 };
+  const items = rows.results.map((row) => {
+    const role = row.role as Role;
+    if (roles.includes(role)) counts[role] += 1;
+    if (Boolean(row.active)) counts.active += 1;
+    return { id: row.id, username: row.username, displayName: row.display_name, role, active: Boolean(row.active), createdAt: row.created_at, updatedAt: row.updated_at };
+  });
+  return c.json({ items, counts });
 });
 
 app.post("/api/users", requireRole(["ADMIN"]), async (c) => {
   const body = await c.req.json<{ username?: string; displayName?: string; role?: Role; password?: string }>();
   if (!body.username || !body.displayName || !body.password || body.password.length < 10 || !roles.includes(body.role as Role)) return c.json({ error: "Thông tin tài khoản chưa hợp lệ." }, 400);
+  const duplicate = await c.env.DB.prepare("SELECT id FROM users WHERE username=? COLLATE NOCASE").bind(body.username.trim()).first();
+  if (duplicate) return c.json({ error: "Tên đăng nhập đã tồn tại." }, 409);
   const password = await hashPassword(body.password, c.env.AUTH_PEPPER); const id = crypto.randomUUID();
   await c.env.DB.prepare("INSERT INTO users (id,username,display_name,role,password_hash,password_salt,password_iterations) VALUES (?,?,?,?,?,?,?)")
     .bind(id, clean(body.username), clean(body.displayName), body.role, password.hash, password.salt, password.iterations).run();
   await audit(c.env, c.get("user").id, "CREATE", "USER", id, { role: body.role });
   return c.json({ id }, 201);
+});
+
+app.put("/api/users/:id", requireRole(["ADMIN"]), async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json<{ displayName?: string; role?: Role; active?: boolean; password?: string }>();
+  if (!body.displayName?.trim() || !roles.includes(body.role as Role) || typeof body.active !== "boolean" || (body.password !== undefined && body.password.length < 10)) {
+    return c.json({ error: "Thông tin tài khoản chưa hợp lệ. Mật khẩu mới cần ít nhất 10 ký tự." }, 400);
+  }
+  const existing = await c.env.DB.prepare("SELECT id,role,active FROM users WHERE id=?").bind(id).first<{ id: string; role: Role; active: number }>();
+  if (!existing) return c.json({ error: "Không tìm thấy tài khoản." }, 404);
+  if (id === c.get("user").id && (!body.active || body.role !== "ADMIN")) return c.json({ error: "Không thể tự khóa hoặc bỏ quyền quản trị của tài khoản đang đăng nhập." }, 400);
+  if (existing.role === "ADMIN" && existing.active && (!body.active || body.role !== "ADMIN")) {
+    const admins = await c.env.DB.prepare("SELECT COUNT(*) AS value FROM users WHERE role='ADMIN' AND active=1").first<{ value: number }>();
+    if ((admins?.value ?? 0) <= 1) return c.json({ error: "Hệ thống phải còn ít nhất một quản trị viên đang hoạt động." }, 400);
+  }
+  if (body.password) {
+    const password = await hashPassword(body.password, c.env.AUTH_PEPPER);
+    await c.env.DB.prepare("UPDATE users SET display_name=?,role=?,active=?,password_hash=?,password_salt=?,password_iterations=?,updated_at=datetime('now') WHERE id=?")
+      .bind(clean(body.displayName), body.role, body.active ? 1 : 0, password.hash, password.salt, password.iterations, id).run();
+  } else {
+    await c.env.DB.prepare("UPDATE users SET display_name=?,role=?,active=?,updated_at=datetime('now') WHERE id=?")
+      .bind(clean(body.displayName), body.role, body.active ? 1 : 0, id).run();
+  }
+  if (!body.active) await c.env.DB.prepare("DELETE FROM sessions WHERE user_id=?").bind(id).run();
+  await audit(c.env, c.get("user").id, "UPDATE", "USER", id, { role: body.role, active: body.active, passwordChanged: Boolean(body.password) });
+  return c.json({ ok: true });
 });
 
 export default app;

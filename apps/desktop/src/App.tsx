@@ -6,9 +6,9 @@ import {
   SlidersHorizontal, Sparkles, UploadCloud, UserRound, Users, X, Check, AlertCircle
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { achievementLevels, achievementTypes, levelLabels, typeLabels, type AchievementInput, type AchievementLevel, type AchievementType, type EmployeeInput, type SessionUser } from "@thongnhat/shared";
-import { api, ApiError, hasToken, setToken } from "./api";
-import { demoEmployees, recentAchievements } from "./demo";
+import { achievementLevels, achievementTypes, levelLabels, roles, typeLabels, type AchievementInput, type AchievementLevel, type AchievementType, type EmployeeInput, type Role, type SessionUser } from "@thongnhat/shared";
+import { api, ApiError, hasToken, setToken, type UserCounts, type UserRecord } from "./api";
+import { demoEmployees } from "./demo";
 import hospitalLogo from "./assets/logo-bvtn.png";
 
 type Page = "dashboard" | "employees" | "candidates" | "import" | "users" | "settings";
@@ -85,7 +85,7 @@ export default function App() {
         {page === "employees" && <EmployeesPage demo={demo} toast={toast} />}
         {page === "candidates" && <CandidatesPage demo={demo} toast={toast} />}
         {page === "import" && <ImportPage demo={demo} toast={toast} />}
-        {page === "users" && <UsersPage demo={demo} user={currentUser} />}
+        {page === "users" && <UsersPage user={currentUser} toast={toast} onCurrentUserUpdated={(updated)=>setUser(current=>current&&current.id===updated.id?{...current,displayName:updated.displayName,role:updated.role}:current)} />}
         {page === "settings" && <SettingsPage />}
       </main>
     </div>
@@ -122,29 +122,30 @@ function Login({ onLogin }: { onLogin: (u: SessionUser) => void }) {
 }
 
 function Dashboard({ demo, displayName, onNavigate }: { demo: boolean; displayName:string; onNavigate: (p: Page) => void }) {
-  const year = new Date().getFullYear(); const [data, setData] = useState<Record<string, unknown> | null>(null);
+  const now=new Date();const year=now.getFullYear(); const [data, setData] = useState<Record<string, unknown> | null>(null);
   useEffect(() => { if (!demo) void api.dashboard(year).then(setData).catch(() => undefined); }, [demo, year]);
+  const monthly=(data?.monthly as number[]|undefined)??Array.from({length:12},()=>0);const chartMax=Math.max(1,...monthly);const chartTicks=[chartMax,Math.round(chartMax*2/3),Math.round(chartMax/3),0];const recent=(data?.recent as Array<Record<string,unknown>>|undefined)??[];const candidateCount=Number(data?.candidates??0);
   const stats = [
-    { label: "Nhân viên đang quản lý", value: demo ? "1.284" : String(data?.employees ?? "—"), delta: "+18", icon: Users, tone: "blue" },
-    { label: `Thành tích năm ${year}`, value: demo ? "327" : String(data?.achievements ?? "—"), delta: "+12,4%", icon: Award, tone: "teal" },
-    { label: "Đơn vị trực thuộc", value: demo ? "42" : String(data?.units ?? "—"), delta: "Đã đồng bộ", icon: LayoutDashboard, tone: "violet" },
-    { label: "Hồ sơ có thể xét", value: demo ? "86" : String(data?.candidates ?? "—"), delta: "Cần rà soát", icon: Sparkles, tone: "amber" }
+    { label: "Nhân viên đang quản lý", value: String(data?.employees ?? "—"), delta: "Đang hoạt động", icon: Users, tone: "blue" },
+    { label: `Thành tích năm ${year}`, value: String(data?.achievements ?? "—"), delta: "Theo ngày chấp nhận", icon: Award, tone: "teal" },
+    { label: "Đơn vị trực thuộc", value: String(data?.units ?? "—"), delta: "Có nhân sự hoạt động", icon: LayoutDashboard, tone: "violet" },
+    { label: "Hồ sơ có thể xét", value: String(data?.candidates ?? "—"), delta: "Theo bộ tiêu chuẩn", icon: Sparkles, tone: "amber" }
   ];
   return <div className="page dashboard-page">
-    <PageTitle eyebrow={`THÁNG 08 · ${year}`} title={`Chào buổi sáng, ${displayName}`} description="Đây là những chuyển động chính trong công tác thi đua, khen thưởng." action={<button className="primary-button" onClick={() => onNavigate("candidates")}><Sparkles size={18}/>Xem đề xuất mới</button>} />
+    <PageTitle eyebrow={`THÁNG ${String(now.getMonth()+1).padStart(2,"0")} · ${year}`} title={`Chào buổi sáng, ${displayName}`} description="Số liệu trực tiếp từ hồ sơ nhân sự và thành tích trên D1." action={<button className="primary-button" onClick={() => onNavigate("candidates")}><Sparkles size={18}/>Xem đề xuất mới</button>} />
     <div className="stat-grid">{stats.map(s => <article className="stat-card" key={s.label}><div className={`stat-icon ${s.tone}`}><s.icon size={21}/></div><div className="stat-meta"><span>{s.label}</span><strong>{s.value}</strong><small>{s.delta}</small></div></article>)}</div>
     <div className="dashboard-grid">
       <section className="panel activity-panel"><PanelHeader title="Nhịp độ ghi nhận" subtitle={`Thành tích được cập nhật trong ${year}`} action={<button className="ghost-button"><Download size={16}/>Xuất báo cáo</button>}/>
-        <div className="chart-wrap"><div className="chart-y"><span>60</span><span>40</span><span>20</span><span>0</span></div><div className="bar-chart">
-          {[28,35,31,47,40,55,43,58,49,61,52,66].map((h,i)=><div className="bar-col" key={i}><div className={`bar ${i===7?"highlight":""}`} style={{height:`${h*2.2}px`}}><span>{h}</span></div><small>T{i+1}</small></div>)}
-        </div></div><div className="chart-legend"><span><i className="legend-dot current"/>Năm {year}</span><span><i className="legend-dot previous"/>Cùng kỳ năm trước</span></div>
+        <div className="chart-wrap"><div className="chart-y">{chartTicks.map((tick,index)=><span key={`${tick}-${index}`}>{tick}</span>)}</div><div className="bar-chart">
+          {monthly.map((value,i)=><div className="bar-col" key={i}><div className={`bar ${i===now.getMonth()?"highlight":""}`} style={{height:`${Math.max(value?12:2,(value/chartMax)*150)}px`}}><span>{value}</span></div><small>T{i+1}</small></div>)}
+        </div></div><div className="chart-legend"><span><i className="legend-dot current"/>Dữ liệu năm {year}</span></div>
       </section>
       <section className="panel recommendation-panel"><PanelHeader title="Đề xuất nổi bật" subtitle="Từ bộ lọc tiêu chuẩn hiện hành" />
-        <div className="award-emblem"><Medal size={30}/></div><span className="recommend-label">HUÂN CHƯƠNG LAO ĐỘNG HẠNG BA</span><strong>12 hồ sơ phù hợp</strong><p>Có Bằng khen Thủ tướng và đề tài khoa học cấp Bộ trong giai đoạn xét.</p>
-        <div className="avatar-row"><div>NA</div><div>QB</div><div>TH</div><div>+9</div></div><button className="secondary-button full" onClick={() => onNavigate("candidates")}>Rà soát danh sách<ChevronRight size={17}/></button>
+        <div className="award-emblem"><Medal size={30}/></div><span className="recommend-label">KẾT QUẢ ĐỐI CHIẾU TỰ ĐỘNG</span><strong>{candidateCount.toLocaleString("vi-VN")} hồ sơ phù hợp</strong><p>Được tính trực tiếp từ bộ tiêu chuẩn đang bật và thành tích đã ghi nhận.</p>
+        <button className="secondary-button full" onClick={() => onNavigate("candidates")}>Rà soát danh sách<ChevronRight size={17}/></button>
       </section>
       <section className="panel recent-panel"><PanelHeader title="Cập nhật gần đây" subtitle="Dữ liệu mới ghi nhận trên hệ thống" action={<button className="text-button" onClick={() => onNavigate("employees")}>Xem tất cả</button>}/>
-        <div className="activity-list">{recentAchievements.map((a,i)=><div className="activity-item" key={a.title}><div className={`activity-icon a${i}`}><FileCheck2 size={18}/></div><div><strong>{a.person}</strong><span>{a.title}</span></div><span className="achievement-tag">{a.type}</span><time>{a.date}</time></div>)}</div>
+        <div className="activity-list">{recent.length?recent.map((item,i)=><div className="activity-item" key={String(item.id)}><div className={`activity-icon a${i}`}><FileCheck2 size={18}/></div><div><strong>{String(item.fullName)}</strong><span>{String(item.title)}</span></div><span className="achievement-tag">{typeLabels[item.type as AchievementType]??String(item.type)}</span><time>{formatDate(item.acceptedDate)}</time></div>):<div className="empty-inline">Chưa có thành tích nào được ghi nhận.</div>}</div>
       </section>
     </div>
   </div>;
@@ -256,7 +257,23 @@ function ImportPage({ demo, toast }: { demo:boolean; toast:(t:Toast["type"],m:st
   </div>;
 }
 
-function UsersPage({ demo,user }:{demo:boolean;user:SessionUser}) { return <div className="page"><PageTitle eyebrow="QUẢN TRỊ HỆ THỐNG" title="Người dùng & phân quyền" description="Cấp quyền tối thiểu cần thiết cho từng nhóm nghiệp vụ." action={<button className="primary-button"><Plus size={18}/>Thêm người dùng</button>}/><div className="role-grid">{[["Quản trị viên","Toàn quyền cấu hình và quản lý",1,"navy"],["Tổ chức cán bộ","Thêm, sửa hồ sơ và thành tích",4,"teal"],["Hội đồng xét duyệt","Rà soát và xem đề xuất",8,"violet"],["Chỉ xem","Tra cứu dữ liệu được phép",12,"gray"]].map(x=><div className="role-card" key={String(x[0])}><div className={`role-symbol ${x[3]}`}><UserRound/></div><div><strong>{x[0]}</strong><span>{x[1]}</span></div><b>{x[2]}</b><small>người dùng</small></div>)}</div><section className="panel"><PanelHeader title="Tài khoản đang hoạt động" subtitle="Phân quyền được áp dụng ngay sau khi lưu"/><div className="user-list"><div className="user-row"><div className="avatar">{initials(user.displayName)}</div><div><strong>{user.displayName}</strong><span>{user.username} · Đăng nhập gần nhất: vừa xong</span></div><span className="role-pill admin">Quản trị viên</span><span className="status-active"><i/>Đang hoạt động</span><button className="row-action"><ChevronRight/></button></div>{demo&&["Phạm Thu Hương","Lê Văn Đức","Trần Ngọc Mai"].map((n,i)=><div className="user-row" key={n}><div className="avatar">{initials(n)}</div><div><strong>{n}</strong><span>{["huong.pt","duc.lv","mai.tn"][i]} · Đăng nhập hôm qua</span></div><span className="role-pill">{i===2?"Hội đồng xét duyệt":"Tổ chức cán bộ"}</span><span className="status-active"><i/>Đang hoạt động</span><button className="row-action"><ChevronRight/></button></div>)}</div></section></div> }
+function UsersPage({user,toast,onCurrentUserUpdated}:{user:SessionUser;toast:(t:Toast["type"],m:string)=>void;onCurrentUserUpdated:(user:UserRecord)=>void}) {
+  const emptyCounts:UserCounts={ADMIN:0,HR:0,REVIEWER:0,VIEWER:0,total:0,active:0};const[items,setItems]=useState<UserRecord[]>([]);const[counts,setCounts]=useState<UserCounts>(emptyCounts);const[loading,setLoading]=useState(true);const[editing,setEditing]=useState<UserRecord|"new"|null>(null);
+  const load=()=>{setLoading(true);api.users().then(result=>{setItems(result.items);setCounts(result.counts)}).catch(error=>toast("error",error instanceof Error?error.message:"Không thể tải tài khoản.")).finally(()=>setLoading(false))};useEffect(load,[]);
+  const roleCards:Array<{role:Role;description:string;tone:string;icon:LucideIcon}>=[
+    {role:"ADMIN",description:"Toàn quyền cấu hình và quản lý",tone:"navy",icon:ShieldCheck},
+    {role:"HR",description:"Thêm, sửa hồ sơ và thành tích",tone:"teal",icon:Users},
+    {role:"REVIEWER",description:"Rà soát và xem đề xuất",tone:"violet",icon:FileCheck2},
+    {role:"VIEWER",description:"Tra cứu dữ liệu được phép",tone:"gray",icon:UserRound}
+  ];
+  return <div className="page"><PageTitle eyebrow="QUẢN TRỊ HỆ THỐNG" title="Người dùng & phân quyền" description="Số liệu lấy trực tiếp từ tài khoản trên D1." action={<button className="primary-button" onClick={()=>setEditing("new")}><Plus size={18}/>Thêm người dùng</button>}/><div className="role-grid">{roleCards.map(card=>{const Icon=card.icon;return <div className="role-card" key={card.role}><div className={`role-symbol ${card.tone}`}><Icon aria-hidden="true"/></div><div><strong>{roleLabel(card.role)}</strong><span>{card.description}</span></div><b>{counts[card.role]}</b><small>tài khoản</small></div>})}</div><section className="panel"><PanelHeader title="Tài khoản hệ thống" subtitle={`${counts.active}/${counts.total} tài khoản đang hoạt động`}/><div className="user-list">{loading?<div className="empty-inline">Đang tải tài khoản...</div>:items.length?items.map(item=><div className="user-row" key={item.id}><div className="avatar">{initials(item.displayName)}</div><div><strong>{item.displayName}{item.id===user.id?" · Bạn":""}</strong><span>{item.username} · Tạo ngày {formatDate(item.createdAt)}</span></div><span className={`role-pill ${item.role==="ADMIN"?"admin":""}`}>{roleLabel(item.role)}</span><span className={item.active?"status-active":"status-inactive"}><i/>{item.active?"Đang hoạt động":"Đã khóa"}</span><button className="row-action" onClick={()=>setEditing(item)} aria-label={`Sửa tài khoản ${item.displayName}`}><ChevronRight/></button></div>):<div className="empty-inline">Chưa có tài khoản.</div>}</div></section>{editing&&<UserModal current={editing==="new"?undefined:editing} onClose={()=>setEditing(null)} onSaved={updated=>{setEditing(null);toast("success",editing==="new"?"Đã thêm người dùng.":"Đã cập nhật người dùng.");if(updated)onCurrentUserUpdated(updated);load()}}/>}</div>
+}
+
+function UserModal({current,onClose,onSaved}:{current?:UserRecord;onClose:()=>void;onSaved:(updated?:UserRecord)=>void}){
+  const[username,setUsername]=useState(current?.username??"");const[displayName,setDisplayName]=useState(current?.displayName??"");const[role,setRole]=useState<Role>(current?.role??"VIEWER");const[active,setActive]=useState(current?.active??true);const[password,setPassword]=useState("");const[saving,setSaving]=useState(false);const[error,setError]=useState("");
+  const save=async(event:React.FormEvent)=>{event.preventDefault();setError("");if(!current&&password.length<10){setError("Mật khẩu phải có ít nhất 10 ký tự.");return}if(current&&password&&password.length<10){setError("Mật khẩu mới phải có ít nhất 10 ký tự.");return}setSaving(true);try{if(current){await api.updateUser(current.id,{displayName,role,active,...(password?{password}:{})});onSaved({...current,displayName:displayName.trim(),role,active})}else{await api.createUser({username,displayName,role,password});onSaved()}}catch(err){setError(err instanceof Error?err.message:"Không thể lưu tài khoản.")}finally{setSaving(false)}};
+  return <div className="modal-backdrop" onMouseDown={event=>event.target===event.currentTarget&&onClose()}><form className="modal user-modal" onSubmit={save}><div className="modal-head"><div><span className="eyebrow teal">TÀI KHOẢN & PHÂN QUYỀN</span><h2>{current?"Sửa người dùng":"Thêm người dùng"}</h2><p>{current?"Tên đăng nhập được giữ cố định để bảo toàn lịch sử.":"Tạo tài khoản và cấp đúng vai trò nghiệp vụ."}</p></div><button type="button" className="icon-button" onClick={onClose} aria-label="Đóng"><X/></button></div>{error&&<div className="form-error" role="alert"><AlertCircle size={18}/>{error}</div>}<div className="form-grid"><label>Tên đăng nhập *<input required disabled={Boolean(current)} value={username} onChange={event=>setUsername(event.target.value.trim())} autoComplete="username"/></label><label>Họ và tên *<input required minLength={2} value={displayName} onChange={event=>setDisplayName(event.target.value)}/></label><label>Vai trò<select value={role} onChange={event=>setRole(event.target.value as Role)}>{roles.map(value=><option key={value} value={value}>{roleLabel(value)}</option>)}</select></label><label>{current?"Mật khẩu mới":"Mật khẩu *"}<input type="password" required={!current} minLength={10} value={password} onChange={event=>setPassword(event.target.value)} autoComplete="new-password" placeholder={current?"Bỏ trống nếu không đổi":"Ít nhất 10 ký tự"}/></label><label className="status-control span-2"><input type="checkbox" checked={active} onChange={event=>setActive(event.target.checked)}/><span><strong>Tài khoản hoạt động</strong><small>Tắt để khóa đăng nhập và thu hồi phiên hiện có.</small></span></label></div><div className="modal-actions"><button type="button" className="ghost-button" onClick={onClose}>Hủy</button><button className="primary-button" disabled={saving}>{saving&&<RefreshCw className="spin" size={17}/>}Lưu tài khoản</button></div></form></div>
+}
 
 function SettingsPage(){const[version,setVersion]=useState("0.1.0");const[status,setStatus]=useState("");useEffect(()=>{void window.desktop?.getVersion().then(setVersion);return window.desktop?.onUpdateStatus(x=>setStatus(x.status))},[]);return <div className="page"><PageTitle eyebrow="CẤU HÌNH" title="Thiết lập hệ thống" description="Quản lý kết nối, cập nhật phần mềm và chính sách dữ liệu."/><div className="settings-grid"><section className="panel setting-card"><div className="setting-icon"><RefreshCw/></div><div><h3>Cập nhật ứng dụng</h3><p>Phiên bản hiện tại <strong>v{version}</strong>. Bản phát hành được kiểm tra an toàn qua GitHub Releases.</p>{status&&<span className="update-status">Trạng thái: {status}</span>}</div><button className="secondary-button" onClick={()=>void window.desktop?.checkForUpdates()}>Kiểm tra cập nhật</button></section><section className="panel setting-card"><div className="setting-icon teal"><ShieldCheck/></div><div><h3>Lưu trữ & bảo mật</h3><p>Dữ liệu nghiệp vụ lưu tại Cloudflare D1; minh chứng lưu riêng trong R2.</p></div><span className="valid-badge"><Check/>Kết nối thiết kế sẵn</span></section></div></div>}
 

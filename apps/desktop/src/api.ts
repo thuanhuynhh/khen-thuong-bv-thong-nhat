@@ -1,4 +1,7 @@
-import type { AchievementInput, EmployeeInput, SessionUser } from "@thongnhat/shared";
+import type { AchievementInput, EmployeeInput, Role, SessionUser } from "@thongnhat/shared";
+
+export type UserRecord = { id: string; username: string; displayName: string; role: Role; active: boolean; createdAt: string; updatedAt: string };
+export type UserCounts = Record<Role, number> & { total: number; active: number };
 
 const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV
   ? "http://localhost:8787"
@@ -47,6 +50,7 @@ export const api = {
     conditions: { all: Array<{ type: string; level: string }> };
     priority: number;
   }) => request<{ id: string }>("/api/reward-rules", { method: "POST", body: JSON.stringify(data) }),
-  users: () => request<{ items: Array<Record<string, unknown>> }>("/api/users"),
-  createUser: (data: Record<string, string>) => request("/api/users", { method: "POST", body: JSON.stringify(data) })
+  users: () => request<{ items: UserRecord[]; counts: UserCounts }>("/api/users"),
+  createUser: (data: { username: string; displayName: string; role: Role; password: string }) => request<{ id: string }>("/api/users", { method: "POST", body: JSON.stringify(data) }),
+  updateUser: (id: string, data: { displayName: string; role: Role; active: boolean; password?: string }) => request<{ ok: true }>(`/api/users/${id}`, { method: "PUT", body: JSON.stringify(data) })
 };
