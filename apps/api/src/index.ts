@@ -204,19 +204,21 @@ app.post("/api/me/password", async (c) => {
 
 app.get("/api/dashboard", async (c) => {
   const year = Number(c.req.query("year")) || new Date().getFullYear();
-  const [employeeCount, achievementCount, unitCount, monthlyRows, recentRows, candidates] = await Promise.all([
+  const [employeeCount, achievementCount, employeesWithAchievements, unitCount, breakdownRows, recentRows, candidates] = await Promise.all([
     c.env.DB.prepare("SELECT COUNT(*) AS value FROM employees WHERE active = 1").first<{ value: number }>(),
     c.env.DB.prepare("SELECT COUNT(*) AS value FROM achievements WHERE year = ?").bind(year).first<{ value: number }>(),
+    c.env.DB.prepare("SELECT COUNT(DISTINCT a.employee_id) AS value FROM achievements a JOIN employees e ON e.id=a.employee_id WHERE a.year=? AND e.active=1").bind(year).first<{ value: number }>(),
     c.env.DB.prepare("SELECT COUNT(DISTINCT unit) AS value FROM employees WHERE active = 1").first<{ value: number }>(),
-    c.env.DB.prepare("SELECT CAST(strftime('%m', accepted_date) AS INTEGER) AS month, COUNT(*) AS value FROM achievements WHERE year=? GROUP BY month ORDER BY month").bind(year).all<{ month: number; value: number }>(),
+    c.env.DB.prepare("SELECT type,level,COUNT(*) AS value FROM achievements WHERE year=? AND type IN ('EMULATION','RESEARCH','CERTIFICATE') GROUP BY type,level ORDER BY type,level").bind(year).all<{ type: string; level: string; value: number }>(),
     c.env.DB.prepare("SELECT a.*,e.full_name,e.citizen_id FROM achievements a JOIN employees e ON e.id=a.employee_id ORDER BY a.created_at DESC LIMIT 6").all<Record<string, unknown>>(),
     getRewardCandidates(c.env, year)
   ]);
-  const monthly = Array.from({ length: 12 }, () => 0);
-  for (const row of monthlyRows.results) if (row.month >= 1 && row.month <= 12) monthly[row.month - 1] = row.value;
+  const breakdowns: Record<string, Array<{ level: string; value: number }>> = { EMULATION: [], RESEARCH: [], CERTIFICATE: [] };
+  for (const row of breakdownRows.results) breakdowns[row.type]?.push({ level: row.level, value: row.value });
   const candidateEmployees = new Set(candidates.map((candidate) => String((candidate.employee as Record<string, unknown>).id)));
   return c.json({ year, employees: employeeCount?.value ?? 0, achievements: achievementCount?.value ?? 0,
-    units: unitCount?.value ?? 0, candidates: candidateEmployees.size, monthly,
+    employeesWithAchievements: employeesWithAchievements?.value ?? 0,
+    units: unitCount?.value ?? 0, candidates: candidateEmployees.size, breakdowns,
     recent: recentRows.results.map((row) => ({ ...achievementRow(row), fullName: row.full_name, citizenId: row.citizen_id })) });
 });
 

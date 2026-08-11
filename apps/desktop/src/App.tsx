@@ -609,7 +609,8 @@ function Dashboard({
   onNavigate: (p: Page) => void;
 }) {
   const now = new Date();
-  const year = now.getFullYear();
+  const currentYear = now.getFullYear();
+  const [year, setYear] = useState(currentYear);
   const [data, setData] = useState<Record<string, unknown> | null>(null);
   useEffect(() => {
     void api
@@ -617,19 +618,16 @@ function Dashboard({
       .then(setData)
       .catch(() => undefined);
   }, [year]);
-  const monthly =
-    (data?.monthly as number[] | undefined) ??
-    Array.from({ length: 12 }, () => 0);
-  const chartMax = Math.max(1, ...monthly);
-  const chartTicks = [
-    chartMax,
-    Math.round((chartMax * 2) / 3),
-    Math.round(chartMax / 3),
-    0,
-  ];
   const recent =
     (data?.recent as Array<Record<string, unknown>> | undefined) ?? [];
-  const candidateCount = Number(data?.candidates ?? 0);
+  const employeeCount = Number(data?.employees ?? 0);
+  const achievementCount = Number(data?.achievements ?? 0);
+  const coveredEmployees = Number(data?.employeesWithAchievements ?? 0);
+  const uncoveredEmployees = Math.max(0, employeeCount - coveredEmployees);
+  const coverageRate = employeeCount ? Math.round((coveredEmployees / employeeCount) * 100) : 0;
+  const averageAchievements = coveredEmployees ? achievementCount / coveredEmployees : 0;
+  const breakdowns = (data?.breakdowns as Record<string, Array<{ level: string; value: number }>> | undefined) ?? {};
+  const years = Array.from({ length: 8 }, (_, index) => currentYear - index);
   const stats = [
     {
       label: "Nhân viên đang quản lý",
@@ -639,9 +637,9 @@ function Dashboard({
       tone: "blue",
     },
     {
-      label: `Thành tích năm ${year}`,
-      value: String(data?.achievements ?? "—"),
-      delta: "Theo ngày chấp nhận",
+      label: `Nhân viên có thành tích ${year}`,
+      value: String(data?.employeesWithAchievements ?? "—"),
+      delta: `${coverageRate}% nhân viên hoạt động`,
       icon: Award,
       tone: "teal",
     },
@@ -663,7 +661,7 @@ function Dashboard({
   return (
     <div className="page dashboard-page">
       <PageTitle
-        eyebrow={`THÁNG ${String(now.getMonth() + 1).padStart(2, "0")} · ${year}`}
+        eyebrow={`DỮ LIỆU NĂM ${year}`}
         title={`Chào buổi sáng, ${displayName}`}
         description="Số liệu trực tiếp từ hồ sơ nhân sự và thành tích trên D1."
         action={
@@ -693,67 +691,39 @@ function Dashboard({
       <div className="dashboard-grid">
         <section className="panel activity-panel">
           <PanelHeader
-            title="Nhịp độ ghi nhận"
-            subtitle={`Thành tích được cập nhật trong ${year}`}
-            action={
-              <button className="ghost-button">
-                <Download size={16} />
-                Xuất báo cáo
-              </button>
-            }
+            title="Mức độ bao phủ thành tích"
+            subtitle={`Tỷ lệ nhân viên có ít nhất một thành tích trong ${year}`}
           />
-          <div className="chart-wrap">
-            <div className="chart-y">
-              {chartTicks.map((tick, index) => (
-                <span key={`${tick}-${index}`}>{tick}</span>
-              ))}
+          <div className="coverage-overview">
+            <div className="coverage-value">
+              <strong>{coverageRate}%</strong>
+              <span>{coveredEmployees.toLocaleString("vi-VN")} / {employeeCount.toLocaleString("vi-VN")} nhân viên</span>
             </div>
-            <div className="bar-chart">
-              {monthly.map((value, i) => (
-                <div className="bar-col" key={i}>
-                  <div
-                    className={`bar ${i === now.getMonth() ? "highlight" : ""}`}
-                    style={{
-                      height: `${Math.max(value ? 12 : 2, (value / chartMax) * 150)}px`,
-                    }}
-                  >
-                    <span>{value}</span>
-                  </div>
-                  <small>T{i + 1}</small>
-                </div>
-              ))}
+            <div className="coverage-track" aria-label={`Đã bao phủ ${coverageRate}%`}>
+              <i style={{ width: `${coverageRate}%` }} />
             </div>
           </div>
-          <div className="chart-legend">
-            <span>
-              <i className="legend-dot current" />
-              Dữ liệu năm {year}
-            </span>
+          <div className="coverage-metrics">
+            <div><span>Đã có thành tích</span><strong>{coveredEmployees.toLocaleString("vi-VN")}</strong></div>
+            <div><span>Chưa có trong năm</span><strong>{uncoveredEmployees.toLocaleString("vi-VN")}</strong></div>
+            <div><span>Bình quân / hồ sơ</span><strong>{averageAchievements.toLocaleString("vi-VN", { maximumFractionDigits: 1 })}</strong></div>
           </div>
         </section>
-        <section className="panel recommendation-panel">
-          <PanelHeader
-            title="Đề xuất nổi bật"
-            subtitle="Từ bộ lọc tiêu chuẩn hiện hành"
-          />
-          <div className="award-emblem">
-            <Medal size={30} />
+        <section className="panel breakdown-panel">
+          <div className="breakdown-head">
+            <PanelHeader title="Cơ cấu thành tích" subtitle="Phân bổ theo cấp / hạng trong năm" />
+            <label>
+              Năm
+              <select value={year} onChange={(event) => setYear(Number(event.target.value))}>
+                {years.map((value) => <option key={value} value={value}>{value}</option>)}
+              </select>
+            </label>
           </div>
-          <span className="recommend-label">KẾT QUẢ ĐỐI CHIẾU TỰ ĐỘNG</span>
-          <strong>
-            {candidateCount.toLocaleString("vi-VN")} hồ sơ phù hợp
-          </strong>
-          <p>
-            Được tính trực tiếp từ bộ tiêu chuẩn đang bật và thành tích đã ghi
-            nhận.
-          </p>
-          <button
-            className="secondary-button full"
-            onClick={() => onNavigate("candidates")}
-          >
-            Rà soát danh sách
-            <ChevronRight size={17} />
-          </button>
+          <div className="donut-grid">
+            <DashboardDonut title="Chiến sĩ thi đua" type="EMULATION" rows={breakdowns.EMULATION ?? []} />
+            <DashboardDonut title="Đề tài" type="RESEARCH" rows={breakdowns.RESEARCH ?? []} />
+            <DashboardDonut title="Bằng khen" type="CERTIFICATE" rows={breakdowns.CERTIFICATE ?? []} />
+          </div>
         </section>
         <section className="panel recent-panel">
           <PanelHeader
@@ -795,6 +765,42 @@ function Dashboard({
         </section>
       </div>
     </div>
+  );
+}
+
+function DashboardDonut({
+  title,
+  type,
+  rows,
+}: {
+  title: string;
+  type: AchievementType;
+  rows: Array<{ level: string; value: number }>;
+}) {
+  const colors = ["#007BFF", "#45A3FF", "#7BC1FF", "#8B6FD6", "#E5A93D", "#35A77B"];
+  const byLevel = new Map(rows.map((row) => [row.level, Number(row.value)]));
+  const items = levelsForAchievementType(type)
+    .map((level) => ({ level, value: byLevel.get(level) ?? 0 }))
+    .filter((item) => item.value > 0);
+  const total = items.reduce((sum, item) => sum + item.value, 0);
+  let cursor = 0;
+  const segments = items.map((item, index) => {
+    const start = cursor;
+    cursor += total ? (item.value / total) * 100 : 0;
+    return `${colors[index % colors.length]} ${start}% ${cursor}%`;
+  });
+  return (
+    <article className="donut-card">
+      <h4>{title}</h4>
+      <div className="donut-chart" style={{ background: total ? `conic-gradient(${segments.join(",")})` : "#E8EEF4" }}>
+        <div><strong>{total.toLocaleString("vi-VN")}</strong><span>tổng</span></div>
+      </div>
+      <div className="donut-legend">
+        {items.length ? items.map((item, index) => (
+          <span key={item.level}><i style={{ background: colors[index % colors.length] }} />{levelLabels[item.level as AchievementLevel] ?? item.level}<b>{item.value}</b></span>
+        )) : <small>Chưa có dữ liệu</small>}
+      </div>
+    </article>
   );
 }
 
