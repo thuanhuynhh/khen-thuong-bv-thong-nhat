@@ -84,6 +84,8 @@ Muốn xem lỗi production:
 npx wrangler tail -c apps/api/wrangler.jsonc --status error
 ```
 
+`npm run redeploy:api` chỉ phát hành Worker. Nếu yêu cầu `redeploy` bao gồm thay đổi desktop/UI, không được dừng ở bước này: bắt buộc tiếp tục tăng version, commit/push, tạo tag mới và xác nhận GitHub Release có bộ cài cùng `latest.yml`.
+
 ## Phát hành GitHub và auto-update
 
 1. Tăng `version` trong `apps/desktop/package.json`.
@@ -101,6 +103,13 @@ git push origin v0.1.1
 ```
 
 Không tạo lại tag đã tồn tại. Kiểm tra `gh release view v0.1.1` trước.
+
+Khi người dùng yêu cầu `redeploy` sau bất kỳ thay đổi nào ảnh hưởng ứng dụng desktop, quy trình phát hành GitHub ở trên là bắt buộc. Mỗi lần phát hành phải dùng version mới theo SemVer; không tái sử dụng version/tag cũ. Chỉ báo hoàn tất sau khi:
+
+- Tag mới đã được push lên `origin`.
+- Workflow `Desktop release` chạy thành công.
+- `gh release view v<version>` tìm thấy Release.
+- Release có bộ cài `.exe`, file `.blockmap` và `latest.yml` để `electron-updater` tải bản mới.
 
 ## Quy tắc hoàn tất
 

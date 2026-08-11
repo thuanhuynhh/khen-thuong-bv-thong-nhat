@@ -9,6 +9,7 @@ release*/
 .env.*
 !.env.example
 coverage/
+outputs/
 *.db
 *.sqlite
 .secrets/

@@ -65,7 +65,6 @@ app.whenReady().then(() => {
     return net.fetch(pathToFileURL(target).toString());
   });
   createWindow();
-  if (app.isPackaged) setTimeout(() => void autoUpdater.checkForUpdates(), 5000);
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 app.on("second-instance", () => { if (mainWindow) { if (mainWindow.isMinimized()) mainWindow.restore(); mainWindow.focus(); } });
