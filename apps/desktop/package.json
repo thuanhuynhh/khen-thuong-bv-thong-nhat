@@ -1,6 +1,6 @@
 {
   "name": "@thongnhat/desktop",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Ứng dụng quản lý thành tích và khen thưởng Bệnh viện Thống Nhất",
   "author": "Bệnh viện Thống Nhất",
   "private": true,
@@ -11,7 +11,9 @@
     "build": "tsc -b && vite build && electron-builder --dir",
     "typecheck": "tsc -b --pretty false",
     "release:win": "tsc -b && vite build && electron-builder --win --publish never",
-    "publish:win": "tsc -b && vite build && electron-builder --win --publish always"
+    "publish:win": "tsc -b && vite build && electron-builder --win --publish always",
+    "release:mac": "tsc -b && vite build && electron-builder --mac --universal --publish never",
+    "publish:mac": "tsc -b && vite build && electron-builder --mac --universal --publish always"
   },
   "dependencies": {
     "@fontsource/be-vietnam-pro": "^5.3.0",
@@ -59,6 +61,15 @@
       ],
       "icon": "build/icon.png",
       "artifactName": "KhenThuong-ThongNhat-${version}-${arch}.${ext}"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "icon": "build/icon.png",
+      "category": "public.app-category.business",
+      "hardenedRuntime": false,
+      "artifactName": "KhenThuong-ThongNhat-${version}-mac-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,

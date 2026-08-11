@@ -18,7 +18,8 @@
     "db:migrate:remote": "npm run db:migrate:remote -w @thongnhat/api",
     "deploy:api": "npm run deploy -w @thongnhat/api",
     "redeploy:api": "npm run build -w @thongnhat/shared && npm run build -w @thongnhat/api && npm run db:migrate:remote && npm run deploy:api",
-    "release:win": "npm run release:win -w @thongnhat/desktop"
+    "release:win": "npm run release:win -w @thongnhat/desktop",
+    "release:mac": "npm run release:mac -w @thongnhat/desktop"
   },
   "devDependencies": {
     "concurrently": "^9.2.0",

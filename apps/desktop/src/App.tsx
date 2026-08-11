@@ -94,6 +94,7 @@ type UpdateState = {
     | "ready"
     | "current"
     | "development"
+    | "disabled"
     | "error";
   percent: number;
   version?: string;
@@ -192,7 +193,11 @@ export default function App() {
     void window.desktop
       .checkForUpdates()
       .then((result) => {
-        if (result.status === "current" || result.status === "development")
+        if (
+          result.status === "current" ||
+          result.status === "development" ||
+          result.status === "disabled"
+        )
           setUpdate({
             status: result.status,
             percent: result.status === "current" ? 100 : 0,
@@ -229,7 +234,7 @@ export default function App() {
     return stop;
   }, []);
 
-  if (!skipUpdate && !["current", "development"].includes(update.status))
+  if (!skipUpdate && !["current", "development", "disabled"].includes(update.status))
     return (
       <UpdateScreen
         state={update}
