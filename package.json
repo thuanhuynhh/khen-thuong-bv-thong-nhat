@@ -1,0 +1,25 @@
+{
+  "name": "thong-nhat-rewards",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Hệ thống quản lý thành tích và xét khen thưởng Bệnh viện Thống Nhất",
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev": "concurrently -n API,DESKTOP -c cyan,green \"npm run dev -w @thongnhat/api\" \"npm run dev -w @thongnhat/desktop\"",
+    "dev:api": "npm run dev -w @thongnhat/api",
+    "dev:desktop": "npm run dev -w @thongnhat/desktop",
+    "build": "npm run build -w @thongnhat/shared && npm run build -w @thongnhat/api && npm run build -w @thongnhat/desktop",
+    "typecheck": "npm run build -w @thongnhat/shared && npm run typecheck -w @thongnhat/api && npm run typecheck -w @thongnhat/desktop",
+    "test": "npm run test --workspaces --if-present",
+    "db:migrate:local": "npm run db:migrate:local -w @thongnhat/api",
+    "db:migrate:remote": "npm run db:migrate:remote -w @thongnhat/api",
+    "deploy:api": "npm run deploy -w @thongnhat/api",
+    "redeploy:api": "npm run build -w @thongnhat/shared && npm run build -w @thongnhat/api && npm run db:migrate:remote && npm run deploy:api",
+    "release:win": "npm run release:win -w @thongnhat/desktop"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.0",
+    "typescript": "^5.9.2"
+  },
+  "engines": { "node": ">=22" }
+}

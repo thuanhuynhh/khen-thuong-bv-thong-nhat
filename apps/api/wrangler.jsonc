@@ -1,0 +1,26 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "thong-nhat-rewards-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-11",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "ALLOWED_ORIGINS": "http://localhost:5173,http://127.0.0.1:5173,app://bundle",
+    "SESSION_TTL_DAYS": "14"
+  },
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "thong-nhat-rewards",
+    "database_id": "020c449d-ac0e-49f9-b872-9201f0777ab7",
+    "migrations_dir": "migrations"
+  }],
+  "r2_buckets": [{
+    "binding": "MEDIA",
+    "bucket_name": "thong-nhat-rewards-media"
+  }],
+  "observability": {
+    "enabled": true,
+    "logs": { "head_sampling_rate": 1 },
+    "traces": { "enabled": true, "head_sampling_rate": 0.05 }
+  }
+}

@@ -1,0 +1,2 @@
+BOOTSTRAP_TOKEN=replace-with-a-long-random-secret
+AUTH_PEPPER=replace-with-an-independent-long-random-secret

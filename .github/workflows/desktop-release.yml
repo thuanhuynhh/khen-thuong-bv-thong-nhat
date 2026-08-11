@@ -1,0 +1,25 @@
+name: Desktop release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - name: Build and publish GitHub Release
+        run: npm run publish:win -w @thongnhat/desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
