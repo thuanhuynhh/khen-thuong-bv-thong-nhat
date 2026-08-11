@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 import { cors } from "hono/cors";
-import { employeeSchema, achievementSchema, filterSchema, isAchievementLevelValid, isRewardType, roles, type Role } from "@thongnhat/shared";
+import { employeeSchema, achievementSchema, filterSchema, isAchievementLevelValid, isRewardType, levelsAtOrAbove, roles, type AchievementLevel, type AchievementType, type Role } from "@thongnhat/shared";
 import { hashPassword, randomToken, sha256, verifyPassword } from "./crypto";
 import type { Bindings, Variables } from "./types";
 
@@ -65,7 +65,7 @@ const achievementRow = (row: Record<string, unknown>) => ({
 
 type RewardCondition = { type: string; level: string; quantity: number; withinYears: number };
 type RewardConditionGroup = { operator: "AND" | "OR"; conditions: RewardCondition[] };
-type RewardConditions = { operator: "AND" | "OR"; groups: RewardConditionGroup[] };
+type RewardConditions = { operator: "AND" | "OR"; exactLevel: boolean; groups: RewardConditionGroup[] };
 
 function normalizeRewardConditions(value: unknown): RewardConditions {
   const raw = (value && typeof value === "object" ? value : {}) as Record<string, unknown>;
@@ -86,7 +86,7 @@ function normalizeRewardConditions(value: unknown): RewardConditions {
       }).filter((condition) => condition.type && condition.level)
     };
   }).filter((group) => group.conditions.length);
-  return { operator: raw.operator === "OR" ? "OR" : "AND", groups };
+  return { operator: raw.operator === "OR" ? "OR" : "AND", exactLevel: raw.exactLevel === true, groups };
 }
 
 function areRewardConditionsValid(conditions: RewardConditions): boolean {
@@ -97,21 +97,32 @@ function areRewardConditionsValid(conditions: RewardConditions): boolean {
   );
 }
 
+function rewardEligibility(conditions: RewardConditions, year: number) {
+  const binds: unknown[] = [];
+  const groupClauses = conditions.groups.map((group) => {
+    const clauses = group.conditions.map((condition) => {
+      const rankedLevels = levelsAtOrAbove(
+        condition.type as AchievementType,
+        condition.level as AchievementLevel,
+        conditions.exactLevel,
+      );
+      const acceptedLevels = rankedLevels.length ? rankedLevels : [condition.level as AchievementLevel];
+      binds.push(condition.type, ...acceptedLevels, year, condition.withinYears, year, condition.withinYears, condition.quantity);
+      return `(SELECT COUNT(*) FROM achievements a WHERE a.employee_id=e.id AND a.type=? AND a.level IN (${acceptedLevels.map(() => "?").join(",")}) AND a.year<=? AND (?=0 OR a.year>=?-?+1))>=?`;
+    });
+    return `(${clauses.join(` ${group.operator} `)})`;
+  });
+  return { clause: groupClauses.join(` ${conditions.operator} `), binds };
+}
+
 async function getRewardCandidates(env: Bindings, year: number) {
   const rules = await env.DB.prepare("SELECT * FROM reward_rules WHERE active=1 ORDER BY priority DESC").all<Record<string, unknown>>();
   const candidates: Array<Record<string, unknown>> = [];
   for (const rule of rules.results) {
     const conditions = normalizeRewardConditions(JSON.parse(String(rule.conditions_json)));
     if (!conditions.groups.length) continue;
-    const binds: unknown[] = [];
-    const groupClauses = conditions.groups.map((group) => {
-      const clauses = group.conditions.map((condition) => {
-        binds.push(condition.type, condition.level, year, condition.withinYears, year, condition.withinYears, condition.quantity);
-        return `(SELECT COUNT(*) FROM achievements a WHERE a.employee_id=e.id AND a.type=? AND a.level=? AND a.year<=? AND (?=0 OR a.year>=?-?+1))>=?`;
-      });
-      return `(${clauses.join(` ${group.operator} `)})`;
-    });
-    const rows = await env.DB.prepare(`SELECT e.id,e.citizen_id,e.full_name,e.unit FROM employees e WHERE e.active=1 AND (${groupClauses.join(` ${conditions.operator} `)}) ORDER BY e.full_name`).bind(...binds).all<Record<string, unknown>>();
+    const eligibility = rewardEligibility(conditions, year);
+    const rows = await env.DB.prepare(`SELECT e.id,e.citizen_id,e.full_name,e.unit FROM employees e WHERE e.active=1 AND (${eligibility.clause}) ORDER BY e.full_name`).bind(...eligibility.binds).all<Record<string, unknown>>();
     for (const employee of rows.results) {
       candidates.push({
         ruleId: rule.id,
@@ -310,7 +321,7 @@ app.post("/api/achievements", requireRole(["ADMIN", "HR"]), async (c) => {
 app.post("/api/achievements/import", requireRole(["ADMIN", "HR"]), async (c) => {
   const body = await c.req.json<{ rows?: Array<Record<string, unknown>> }>();
   if (!Array.isArray(body.rows) || body.rows.length > 1000) return c.json({ error: "Mỗi lần chỉ nhập tối đa 1.000 dòng." }, 400);
-  const citizenIds = [...new Set(body.rows.map(row => String(row.citizenId ?? "")).filter(id => /^\d{9,12}$/.test(id)))];
+  const citizenIds = [...new Set(body.rows.map(row => String(row.citizenId ?? "")).filter(id => /^\d{12}$/.test(id)))];
   const employees = new Map<string,string>();
   for (let i = 0; i < citizenIds.length; i += 100) {
     const ids = citizenIds.slice(i, i + 100);
@@ -318,7 +329,22 @@ app.post("/api/achievements/import", requireRole(["ADMIN", "HR"]), async (c) => 
     found.results.forEach(row => employees.set(row.citizen_id,row.id));
   }
   const valid: ReturnType<typeof achievementSchema.parse>[]=[];const errors:{row:number;message:string}[]=[];
-  body.rows.forEach((row,index)=>{const citizenId=String(row.citizenId??"");const employeeId=employees.get(citizenId);if(!employeeId){errors.push({row:index+2,message:`Không tìm thấy nhân viên có CCCD ${citizenId||"trống"}.`});return}const parsed=achievementSchema.safeParse({...row,employeeId});parsed.success?valid.push(parsed.data):errors.push({row:index+2,message:parsed.error.issues[0]?.message??"Thành tích không hợp lệ."})});
+  body.rows.forEach((row, index) => {
+    const citizenId = String(row.citizenId ?? "");
+    if (!/^\d{12}$/.test(citizenId)) {
+      errors.push({ row: index + 2, message: "CCCD phải gồm đúng 12 chữ số." });
+      return;
+    }
+    const employeeId = employees.get(citizenId);
+    if (!employeeId) {
+      errors.push({ row: index + 2, message: `Không tìm thấy nhân viên có CCCD ${citizenId}.` });
+      return;
+    }
+    const parsed = achievementSchema.safeParse({ ...row, employeeId });
+    parsed.success
+      ? valid.push(parsed.data)
+      : errors.push({ row: index + 2, message: parsed.error.issues[0]?.message ?? "Thành tích không hợp lệ." });
+  });
   for(let i=0;i<valid.length;i+=100)await c.env.DB.batch(valid.slice(i,i+100).map(x=>c.env.DB.prepare(`INSERT INTO achievements (id,employee_id,type,level,title,accepted_date,year,organization,decision_number,role,notes) VALUES (?,?,?,?,?,?,?,?,?,?,?)`).bind(crypto.randomUUID(),x.employeeId,x.type,x.level,clean(x.title),x.acceptedDate,x.year,clean(x.organization),clean(x.decisionNumber),clean(x.role),x.notes)));
   await audit(c.env,c.get("user").id,"IMPORT","ACHIEVEMENT",undefined,{accepted:valid.length,rejected:errors.length,matchedBy:"citizenId"});
   return c.json({accepted:valid.length,rejected:errors.length,errors});
@@ -372,22 +398,29 @@ app.get("/api/attachments/:id", async (c) => {
 
 app.get("/api/reward-candidates", async (c) => {
   const year = Number(c.req.query("year")) || new Date().getFullYear();
-  const candidates = await getRewardCandidates(c.env, year);
-  const byRule = new Map<string, Record<string, unknown>>();
-  for (const candidate of candidates) {
-    const ruleId = String(candidate.ruleId);
-    if (!byRule.has(ruleId)) byRule.set(ruleId, {
-      id: ruleId, name: candidate.ruleName, rewardType: candidate.rewardType,
-      rewardLevel: candidate.rewardLevel, conditions: candidate.conditions, employees: []
+  const [rules, members] = await Promise.all([
+    c.env.DB.prepare("SELECT * FROM reward_rules WHERE active=1 AND evaluation_year=? ORDER BY priority DESC, name").bind(year).all<Record<string, unknown>>(),
+    c.env.DB.prepare("SELECT pm.* FROM proposal_members pm JOIN reward_rules r ON r.id=pm.proposal_id WHERE r.active=1 AND r.evaluation_year=? ORDER BY pm.full_name").bind(year).all<Record<string, unknown>>()
+  ]);
+  const employeesByProposal = new Map<string, Array<Record<string, unknown>>>();
+  for (const member of members.results) {
+    const proposalId = String(member.proposal_id);
+    if (!employeesByProposal.has(proposalId)) employeesByProposal.set(proposalId, []);
+    employeesByProposal.get(proposalId)!.push({
+      id: member.employee_id, citizenId: member.citizen_id,
+      fullName: member.full_name, unit: member.unit
     });
-    (byRule.get(ruleId)!.employees as unknown[]).push(candidate.employee);
   }
-  const rules = await c.env.DB.prepare("SELECT * FROM reward_rules WHERE active=1 ORDER BY priority DESC, name").all<Record<string, unknown>>();
-  for (const rule of rules.results) if (!byRule.has(String(rule.id))) byRule.set(String(rule.id), {
+  const proposals = rules.results.map((rule) => ({
     id: rule.id, name: rule.name, rewardType: rule.reward_type, rewardLevel: rule.reward_level,
-    conditions: normalizeRewardConditions(JSON.parse(String(rule.conditions_json))), employees: []
-  });
-  return c.json({ year, candidates, proposals: [...byRule.values()] });
+    year: rule.evaluation_year, conditions: normalizeRewardConditions(JSON.parse(String(rule.conditions_json))),
+    snapshotUpdatedAt: rule.snapshot_updated_at, employees: employeesByProposal.get(String(rule.id)) ?? []
+  }));
+  const candidates = proposals.flatMap((proposal) => proposal.employees.map((employee) => ({
+    ruleId: proposal.id, ruleName: proposal.name, rewardType: proposal.rewardType,
+    rewardLevel: proposal.rewardLevel, conditions: proposal.conditions, employee
+  })));
+  return c.json({ year, candidates, proposals });
 });
 
 app.get("/api/reward-rules", async (c) => {
@@ -396,12 +429,14 @@ app.get("/api/reward-rules", async (c) => {
 });
 
 app.post("/api/reward-rules", requireRole(["ADMIN"]), async (c) => {
-  const body = await c.req.json<{ name?: string; rewardType?: string; rewardLevel?: string; conditions?: unknown; priority?: number }>();
+  const body = await c.req.json<{ name?: string; rewardType?: string; rewardLevel?: string; conditions?: unknown; priority?: number; year?: number }>();
   const conditions = normalizeRewardConditions(body.conditions);
+  const year = Math.trunc(Number(body.year));
   if (
     !body.name?.trim() ||
     !body.rewardType ||
     !body.rewardLevel ||
+    !Number.isInteger(year) || year < 1900 || year > 2100 ||
     !conditions.groups.length ||
     !isRewardType(body.rewardType) ||
     !isAchievementLevelValid(body.rewardType, body.rewardLevel) ||
@@ -410,10 +445,32 @@ app.post("/api/reward-rules", requireRole(["ADMIN"]), async (c) => {
     return c.json({ error: "Bộ tiêu chuẩn cần có tên, kết quả và ít nhất một điều kiện hợp lệ." }, 400);
   }
   const id = crypto.randomUUID();
-  await c.env.DB.prepare("INSERT INTO reward_rules (id,name,reward_type,reward_level,conditions_json,priority) VALUES (?,?,?,?,?,?)")
-    .bind(id, clean(body.name), body.rewardType, body.rewardLevel, JSON.stringify(conditions), Math.trunc(body.priority ?? 0)).run();
-  await audit(c.env, c.get("user").id, "CREATE", "REWARD_RULE", id);
+  const eligibility = rewardEligibility(conditions, year);
+  await c.env.DB.batch([
+    c.env.DB.prepare("INSERT INTO reward_rules (id,name,reward_type,reward_level,conditions_json,priority,evaluation_year,snapshot_updated_at) VALUES (?,?,?,?,?,?,?,datetime('now'))")
+      .bind(id, clean(body.name), body.rewardType, body.rewardLevel, JSON.stringify(conditions), Math.trunc(body.priority ?? 0), year),
+    c.env.DB.prepare(`INSERT INTO proposal_members (proposal_id,employee_id,citizen_id,full_name,unit) SELECT ?,e.id,e.citizen_id,e.full_name,e.unit FROM employees e WHERE e.active=1 AND (${eligibility.clause})`).bind(id, ...eligibility.binds)
+  ]);
+  await audit(c.env, c.get("user").id, "CREATE", "REWARD_RULE", id, { year, snapshot: true });
   return c.json({ id }, 201);
+});
+
+app.post("/api/reward-rules/:id/refresh", requireRole(["ADMIN"]), async (c) => {
+  const id = c.req.param("id");
+  const rule = await c.env.DB.prepare("SELECT * FROM reward_rules WHERE id=?").bind(id).first<Record<string, unknown>>();
+  if (!rule) return c.json({ error: "Không tìm thấy đề xuất." }, 404);
+  const year = Number(rule.evaluation_year);
+  const conditions = normalizeRewardConditions(JSON.parse(String(rule.conditions_json)));
+  if (!Number.isInteger(year) || !conditions.groups.length) return c.json({ error: "Đề xuất chưa có năm xét hoặc bộ tiêu chuẩn hợp lệ." }, 400);
+  const eligibility = rewardEligibility(conditions, year);
+  await c.env.DB.batch([
+    c.env.DB.prepare("DELETE FROM proposal_members WHERE proposal_id=?").bind(id),
+    c.env.DB.prepare(`INSERT INTO proposal_members (proposal_id,employee_id,citizen_id,full_name,unit) SELECT ?,e.id,e.citizen_id,e.full_name,e.unit FROM employees e WHERE e.active=1 AND (${eligibility.clause})`).bind(id, ...eligibility.binds),
+    c.env.DB.prepare("UPDATE reward_rules SET snapshot_updated_at=datetime('now'),updated_at=datetime('now') WHERE id=?").bind(id)
+  ]);
+  const count = await c.env.DB.prepare("SELECT COUNT(*) AS value FROM proposal_members WHERE proposal_id=?").bind(id).first<{ value: number }>();
+  await audit(c.env, c.get("user").id, "REFRESH", "REWARD_RULE", id, { year, employees: count?.value ?? 0 });
+  return c.json({ ok: true, employees: count?.value ?? 0 });
 });
 
 app.put("/api/reward-rules/:id", requireRole(["ADMIN"]), async (c) => {

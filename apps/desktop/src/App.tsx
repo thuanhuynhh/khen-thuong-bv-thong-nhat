@@ -1,10 +1,28 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  addMonths,
+  eachDayOfInterval,
+  endOfMonth,
+  endOfWeek,
+  format as formatCalendarDate,
+  isSameDay,
+  isSameMonth,
+  parseISO,
+  setMonth,
+  setYear,
+  startOfMonth,
+  startOfWeek,
+  subMonths,
+} from "date-fns";
+import { vi } from "date-fns/locale";
 import { readSheet } from "read-excel-file/browser";
 import writeXlsxFile, { type SheetData } from "write-excel-file/browser";
 import {
   Award,
   Bell,
+  CalendarDays,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   CircleHelp,
   Download,
@@ -14,6 +32,7 @@ import {
   LogOut,
   Medal,
   Menu,
+  Pencil,
   Plus,
   RefreshCw,
   Search,
@@ -728,6 +747,7 @@ function EmployeesPage({
   const [employees, setEmployees] = useState<Array<Record<string, unknown>>>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const selectAllRef = useRef<HTMLInputElement>(null);
@@ -741,20 +761,25 @@ function EmployeesPage({
   const [achievementType, setAchievementType] = useState("");
   const [level, setLevel] = useState("");
   const [year, setYear] = useState("");
+  const buildQuery = (
+    targetPage: number,
+    targetPageSize: number,
+    filters = { search, unit, achievementType, level, year },
+  ) => new URLSearchParams({
+    search: filters.search,
+    page: String(targetPage),
+    pageSize: String(targetPageSize),
+    ...(filters.unit && { unit: filters.unit }),
+    ...(filters.achievementType && { achievementType: filters.achievementType }),
+    ...(filters.level && { achievementLevel: filters.level }),
+    ...(filters.year && { fromYear: filters.year, toYear: filters.year }),
+  });
   const load = (
     targetPage = page,
     filters = { search, unit, achievementType, level, year },
   ) => {
     setLoading(true);
-    const q = new URLSearchParams({
-      search: filters.search,
-      page: String(targetPage),
-      pageSize: String(pageSize),
-      ...(filters.unit && { unit: filters.unit }),
-      ...(filters.achievementType && { achievementType: filters.achievementType }),
-      ...(filters.level && { achievementLevel: filters.level }),
-      ...(filters.year && { fromYear: filters.year, toYear: filters.year }),
-    });
+    const q = buildQuery(targetPage, pageSize, filters);
     api
       .employees(q.toString())
       .then((x) => {
@@ -798,6 +823,53 @@ function EmployeesPage({
       setDeleting(false);
     }
   };
+  const exportEmployees = async () => {
+    setExporting(true);
+    try {
+      const exportPageSize = 100;
+      const firstPage = await api.employees(buildQuery(1, exportPageSize).toString());
+      const rows = [...firstPage.items];
+      const pageCount = Math.ceil(firstPage.total / exportPageSize);
+      for (let targetPage = 2; targetPage <= pageCount; targetPage += 1) {
+        const result = await api.employees(buildQuery(targetPage, exportPageSize).toString());
+        rows.push(...result.items);
+      }
+      const header = (value: string) => ({
+        value,
+        fontWeight: "bold" as const,
+        color: "#FFFFFF",
+        backgroundColor: "#007BFF",
+        align: "center" as const,
+      });
+      const sheetRows: SheetData = [
+        [header("STT"), header("CCCD"), header("Họ và tên"), header("Giới tính"), header("Ngày sinh"), header("Khoa / phòng"), header("Chức vụ"), header("Chức danh nghề nghiệp"), header("Trạng thái")],
+        ...rows.map((employee, index) => [
+          index + 1,
+          citizenIdForExport(employee.citizenId),
+          String(employee.fullName ?? ""),
+          genderLabel(String(employee.gender ?? "")),
+          formatDate(employee.dateOfBirth),
+          String(employee.unit ?? ""),
+          String(employee.position ?? ""),
+          String(employee.professionalTitle ?? ""),
+          employee.active === false ? "Ngừng hoạt động" : "Đang hoạt động",
+        ]),
+      ];
+      const today = formatCalendarDate(new Date(), "yyyy-MM-dd");
+      await writeXlsxFile(sheetRows, {
+        columns: [
+          { width: 8 }, { width: 18 }, { width: 30 }, { width: 13 }, { width: 14 },
+          { width: 32 }, { width: 24 }, { width: 28 }, { width: 18 },
+        ],
+        sheet: "Danh sách nhân viên",
+      }).toFile(`danh-sach-nhan-vien-${today}.xlsx`);
+      toast("success", `Đã xuất ${rows.length} nhân viên ra Excel.`);
+    } catch (error) {
+      toast("error", error instanceof Error ? error.message : "Không thể xuất danh sách nhân viên.");
+    } finally {
+      setExporting(false);
+    }
+  };
   return (
     <div className="page">
       <PageTitle
@@ -835,8 +907,8 @@ function EmployeesPage({
             <SlidersHorizontal size={17} />
             Bộ lọc chi tiết
           </button>
-          <button className="ghost-button">
-            <Download size={17} />
+          <button className="ghost-button" disabled={exporting} onClick={() => void exportEmployees()}>
+            {exporting ? <RefreshCw className="spin" size={17} /> : <Download size={17} />}
             Xuất Excel
           </button>
         </div>
@@ -857,7 +929,10 @@ function EmployeesPage({
                 Loại thành tích
                 <select
                   value={achievementType}
-                  onChange={(event) => setAchievementType(event.target.value)}
+                  onChange={(event) => {
+                    setAchievementType(event.target.value);
+                    setLevel("");
+                  }}
                 >
                   <option value="">Tất cả loại</option>
                   {achievementTypes.map((type) => (
@@ -869,10 +944,11 @@ function EmployeesPage({
                 Cấp / hạng
                 <select
                   value={level}
+                  disabled={!achievementType}
                   onChange={(e) => setLevel(e.target.value)}
                 >
-                  <option value="">Tất cả cấp</option>
-                  {achievementLevels.map((x) => (
+                  <option value="">{achievementType ? "Tất cả cấp / hạng" : "Chọn loại trước"}</option>
+                  {(achievementType ? levelsForAchievementType(achievementType as AchievementType) : []).map((x) => (
                     <option key={x} value={x}>
                       {levelLabels[x]}
                     </option>
@@ -898,7 +974,7 @@ function EmployeesPage({
                 Áp dụng bộ lọc
               </button>
               <button
-                className="text-button clear-filters"
+                className="clear-filters"
                 onClick={() => {
                   setUnit("");
                   setAchievementType("");
@@ -1196,9 +1272,10 @@ function EmployeeModal({
             <input
               required
               inputMode="numeric"
-              pattern="\d{9,12}"
+              pattern="\d{12}"
+              maxLength={12}
               value={form.citizenId}
-              onChange={(e) => update("citizenId", e.target.value)}
+              onChange={(e) => update("citizenId", e.target.value.replace(/\D/g, "").slice(0, 12))}
             />
           </label>
           <label>
@@ -1214,12 +1291,10 @@ function EmployeeModal({
           </label>
           <label>
             Ngày sinh *
-            <input
-              required
-              inputMode="numeric"
+            <VietnameseDatePicker
               value={birthDate}
-              onChange={(e) => setBirthDate(e.target.value)}
-              placeholder="dd/mm/yyyy"
+              onChange={setBirthDate}
+              required
             />
           </label>
           <label>
@@ -1292,7 +1367,7 @@ function EmployeeDetailModal({
   const [form, setForm] = useState<EmployeeInput | null>(null);
   const applyEmployee = (value: Record<string, unknown>) => {
     setEmployee(value);
-    setBirthDate(String(value.dateOfBirth ?? ""));
+    setBirthDate(formatDate(value.dateOfBirth));
     setForm({
       citizenId: String(value.citizenId ?? ""),
       fullName: String(value.fullName ?? ""),
@@ -1325,7 +1400,7 @@ function EmployeeDetailModal({
     event.preventDefault();
     if (!form) return;
     setError("");
-    const iso = /^\d{4}-\d{2}-\d{2}$/.test(birthDate) ? birthDate : null;
+    const iso = parseVietnameseDate(birthDate);
     if (!iso) {
       setError("Chọn ngày sinh hợp lệ theo định dạng ngày/tháng/năm.");
       return;
@@ -1405,10 +1480,11 @@ function EmployeeDetailModal({
                   <input
                     required
                     inputMode="numeric"
-                    pattern="\d{9,12}"
+                    pattern="\d{12}"
+                    maxLength={12}
                     value={form.citizenId}
                     onChange={(event) =>
-                      update("citizenId", event.target.value)
+                      update("citizenId", event.target.value.replace(/\D/g, "").slice(0, 12))
                     }
                   />
                 </label>
@@ -1426,13 +1502,10 @@ function EmployeeDetailModal({
                   </label>
                   <label>
                     Ngày sinh *
-                    <input
-                      type="date"
-                      lang="vi-VN"
-                      required
+                    <VietnameseDatePicker
                       value={birthDate}
-                      onChange={(event) => setBirthDate(event.target.value)}
-                      aria-label="Ngày sinh, định dạng ngày tháng năm"
+                      onChange={setBirthDate}
+                      required
                     />
                   </label>
                 </div>
@@ -1882,6 +1955,114 @@ function AchievementModal({
   );
 }
 
+function VietnameseDatePicker({
+  value,
+  onChange,
+  required = false,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  required?: boolean;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const selectedIso = parseVietnameseDate(value);
+  const selectedDate = selectedIso ? parseISO(selectedIso) : null;
+  const [open, setOpen] = useState(false);
+  const [viewMonth, setViewMonth] = useState(() => startOfMonth(selectedDate ?? new Date()));
+  useEffect(() => {
+    if (selectedDate) setViewMonth(startOfMonth(selectedDate));
+  }, [selectedIso]);
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: PointerEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [open]);
+  const calendarStart = startOfWeek(startOfMonth(viewMonth), { weekStartsOn: 1 });
+  const calendarEnd = endOfWeek(endOfMonth(viewMonth), { weekStartsOn: 1 });
+  const days = eachDayOfInterval({ start: calendarStart, end: calendarEnd });
+  const currentYear = new Date().getFullYear();
+  return (
+    <div className="vietnamese-date-picker" ref={containerRef}>
+      <div className="date-picker-input">
+        <input
+          required={required}
+          inputMode="numeric"
+          autoComplete="off"
+          maxLength={10}
+          pattern="\d{2}/\d{2}/\d{4}"
+          placeholder="dd/mm/yyyy"
+          value={value === "—" ? "" : value}
+          onChange={(event) => onChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") setOpen(false);
+          }}
+          aria-label="Ngày sinh, định dạng ngày tháng năm"
+          aria-expanded={open}
+        />
+        <button type="button" onClick={() => setOpen((current) => !current)} aria-label="Mở lịch chọn ngày">
+          <CalendarDays size={17} />
+        </button>
+      </div>
+      {open && (
+        <div className="date-picker-popover" role="dialog" aria-label="Chọn ngày sinh">
+          <div className="date-picker-head">
+            <button type="button" onClick={() => setViewMonth((current) => subMonths(current, 1))} aria-label="Tháng trước">
+              <ChevronLeft size={17} />
+            </button>
+            <select
+              value={viewMonth.getMonth()}
+              onChange={(event) => setViewMonth((current) => startOfMonth(setMonth(current, Number(event.target.value))))}
+              aria-label="Chọn tháng"
+            >
+              {Array.from({ length: 12 }, (_, index) => <option key={index} value={index}>Tháng {index + 1}</option>)}
+            </select>
+            <select
+              value={viewMonth.getFullYear()}
+              onChange={(event) => setViewMonth((current) => startOfMonth(setYear(current, Number(event.target.value))))}
+              aria-label="Chọn năm"
+            >
+              {Array.from({ length: currentYear - 1899 }, (_, index) => currentYear - index).map((calendarYear) => (
+                <option key={calendarYear} value={calendarYear}>{calendarYear}</option>
+              ))}
+            </select>
+            <button type="button" onClick={() => setViewMonth((current) => addMonths(current, 1))} aria-label="Tháng sau">
+              <ChevronRight size={17} />
+            </button>
+          </div>
+          <div className="date-picker-weekdays" aria-hidden="true">
+            {['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'].map((day) => <span key={day}>{day}</span>)}
+          </div>
+          <div className="date-picker-days">
+            {days.map((day) => {
+              const disabled = day > new Date();
+              const selected = selectedDate ? isSameDay(day, selectedDate) : false;
+              return (
+                <button
+                  type="button"
+                  key={day.toISOString()}
+                  disabled={disabled}
+                  className={`${isSameMonth(day, viewMonth) ? "" : "outside"} ${selected ? "selected" : ""}`}
+                  onClick={() => {
+                    onChange(formatCalendarDate(day, "dd/MM/yyyy", { locale: vi }));
+                    setOpen(false);
+                  }}
+                  aria-label={formatCalendarDate(day, "EEEE, dd/MM/yyyy", { locale: vi })}
+                  aria-pressed={selected}
+                >
+                  {day.getDate()}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SearchableSelect({
   value,
   onChange,
@@ -1964,6 +2145,7 @@ function CandidatesPage({
   );
   const [ruleModal, setRuleModal] = useState(false);
   const [selectedProposal, setSelectedProposal] = useState<Record<string, unknown> | null>(null);
+  const [refreshingProposal, setRefreshingProposal] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const load = () => {
     setLoading(true);
@@ -1979,6 +2161,21 @@ function CandidatesPage({
       .finally(() => setLoading(false));
   };
   useEffect(load, [year]);
+  const refreshProposal = async (proposal: Record<string, unknown>) => {
+    const id = String(proposal.id);
+    const name = String(proposal.name);
+    if (!window.confirm(`Cập nhật lại danh sách nhân viên của “${name}” theo dữ liệu hiện tại?`)) return;
+    setRefreshingProposal(id);
+    try {
+      const result = await api.refreshRewardProposal(id);
+      toast("success", `Đã cập nhật đề xuất: ${result.employees} nhân viên đạt yêu cầu.`);
+      load();
+    } catch (error) {
+      toast("error", error instanceof Error ? error.message : "Không thể cập nhật đề xuất.");
+    } finally {
+      setRefreshingProposal(null);
+    }
+  };
   const years = Array.from(
     { length: 8 },
     (_, index) => new Date().getFullYear() - index,
@@ -2078,16 +2275,31 @@ function CandidatesPage({
                         </span>
                       </td>
                       <td className="user-action-cell">
-                        <button
-                          className="row-action"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setSelectedProposal(proposal);
-                          }}
-                          aria-label={`Xem đề xuất ${proposal.name}`}
-                        >
-                          <ChevronRight size={18} />
-                        </button>
+                        <div className="proposal-row-actions">
+                          <button
+                            className="row-action"
+                            disabled={refreshingProposal === String(proposal.id)}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void refreshProposal(proposal);
+                            }}
+                            aria-label={`Cập nhật đề xuất ${proposal.name} theo dữ liệu hiện tại`}
+                            title="Cập nhật danh sách nhân viên"
+                          >
+                            <RefreshCw className={refreshingProposal === String(proposal.id) ? "spin" : undefined} size={17} />
+                          </button>
+                          <button
+                            className="row-action"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setSelectedProposal(proposal);
+                            }}
+                            aria-label={`Xem đề xuất ${proposal.name}`}
+                            title="Xem đề xuất"
+                          >
+                            <Pencil size={17} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -2105,6 +2317,7 @@ function CandidatesPage({
       </section>
       {ruleModal && (
         <RewardRuleModal
+          year={year}
           onClose={() => setRuleModal(false)}
           onSaved={() => {
             setRuleModal(false);
@@ -2171,7 +2384,7 @@ function ProposalDetailModal({
         [header("STT"), header("CCCD"), header("Họ và tên"), header("Khoa / phòng"), header("Kết quả")],
         ...employees.map((employee, index) => [
           index + 1,
-          String(employee.citizenId ?? ""),
+          citizenIdForExport(employee.citizenId),
           String(employee.fullName ?? ""),
           String(employee.unit ?? ""),
           "Đạt yêu cầu",
@@ -2218,7 +2431,7 @@ function ProposalDetailModal({
         <div className="proposal-detail-toolbar">
           <div>
             <strong>{employees.length}</strong>
-            <span>nhân viên đạt yêu cầu</span>
+            <span>nhân viên đạt yêu cầu · chốt ngày {formatDate(proposal.snapshotUpdatedAt)}</span>
           </div>
           <button
             className="primary-button"
@@ -2243,7 +2456,7 @@ function ProposalDetailModal({
             <tbody>
               {employees.length ? (
                 employees.map((employee, index) => (
-                  <tr key={String(employee.id)}>
+                  <tr key={String(employee.citizenId)}>
                     <td className="mono">{String(index + 1).padStart(2, "0")}</td>
                     <td>
                       <div className="person-cell">
@@ -2272,9 +2485,11 @@ function ProposalDetailModal({
 }
 
 function RewardRuleModal({
+  year,
   onClose,
   onSaved,
 }: {
+  year: number;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -2282,6 +2497,7 @@ function RewardRuleModal({
   const [rewardType, setRewardType] = useState<RewardType | "">("");
   const [rewardLevel, setRewardLevel] = useState<AchievementLevel | "">("");
   const [priority, setPriority] = useState(100);
+  const [exactLevel, setExactLevel] = useState(false);
   type Condition = {
     type: AchievementType | "";
     level: AchievementLevel | "";
@@ -2354,7 +2570,8 @@ function RewardRuleModal({
         name,
         rewardType,
         rewardLevel,
-        conditions: { operator, groups },
+        year,
+        conditions: { operator, exactLevel, groups },
         priority,
       });
       onSaved();
@@ -2452,6 +2669,17 @@ function RewardRuleModal({
               value={priority}
               onChange={(event) => setPriority(Number(event.target.value))}
             />
+          </label>
+          <label className={`exact-level-option ${exactLevel ? "checked" : ""}`}>
+            <input
+              type="checkbox"
+              checked={exactLevel}
+              onChange={(event) => setExactLevel(event.target.checked)}
+            />
+            <span>
+              <strong>Lấy chính xác cấp / hạng</strong>
+              <small>{exactLevel ? "Chỉ tính đúng cấp / hạng đã chọn" : "Mặc định tính cả cấp / hạng cao hơn"}</small>
+            </span>
           </label>
           {groups.length > 1 && (
             <label className="span-2">
@@ -2685,6 +2913,8 @@ function ImportPage({
   const [overwriteExisting, setOverwriteExisting] = useState(false);
   const rowCount =
     mode === "employees" ? employeeRows.length : achievementRows.length;
+  const importRows = mode === "employees" ? employeeRows : achievementRows;
+  const invalidCitizenIdCount = importRows.filter((row) => !/^\d{12}$/.test(row.citizenId)).length;
   const reset = () => {
     setFile(null);
     setEmployeeRows([]);
@@ -2735,7 +2965,7 @@ function ImportPage({
           const gender = normalize(value(row, ["gioi tinh"]));
           const status = normalize(value(row, ["trang thai"]));
           return {
-            citizenId: value(row, ["cccd", "so cccd", "can cuoc cong dan"]),
+            citizenId: excelCitizenId(row[column(["cccd", "so cccd", "can cuoc cong dan"])]),
             fullName: value(row, ["ho ten", "ho va ten"]),
             gender: gender === "nu" ? "NU" : gender === "khac" ? "KHAC" : "NAM",
             dateOfBirth: excelDate(
@@ -2760,7 +2990,7 @@ function ImportPage({
             row[column(["ngay chap nhan", "ngay ghi nhan", "ngay"])],
           );
           return {
-            citizenId: value(row, ["cccd", "so cccd", "can cuoc cong dan"]),
+            citizenId: excelCitizenId(row[column(["cccd", "so cccd", "can cuoc cong dan"])]),
             type: parseAchievementType(value(row, ["loai thanh tich", "loai"])),
             level: parseAchievementLevel(
               value(row, ["cap / hang", "cap/hang", "cap hang", "cap", "hang"]),
@@ -2783,7 +3013,10 @@ function ImportPage({
     }
   };
   const upload = async () => {
-    if (!rowCount) return;
+    if (!rowCount || invalidCitizenIdCount) {
+      if (invalidCitizenIdCount) toast("error", `${invalidCitizenIdCount} dòng có CCCD không đúng 12 chữ số.`);
+      return;
+    }
     setLoading(true);
     try {
       if (mode === "employees") {
@@ -2916,8 +3149,8 @@ function ImportPage({
           <div className="drop-hint">
             <FileCheck2 size={16} />
             {mode === "employees"
-              ? "Bắt buộc: CCCD, Họ tên, Giới tính, Ngày sinh, Đơn vị"
-              : "Bắt buộc: CCCD, Loại, Cấp/hạng, Tên thành tích, Ngày chấp nhận"}
+              ? "Bắt buộc: CCCD đúng 12 số, Họ tên, Giới tính, Ngày sinh, Đơn vị"
+              : "Bắt buộc: CCCD đúng 12 số, Loại, Cấp/hạng, Tên thành tích, Ngày chấp nhận"}
           </div>
         </div>
       ) : (
@@ -2932,9 +3165,9 @@ function ImportPage({
                 {(file.size / 1024).toFixed(1)} KB · {rowCount} dòng dữ liệu
               </span>
             </div>
-            <span className="valid-badge">
-              <Check />
-              Sẵn sàng nhập
+            <span className={`valid-badge ${invalidCitizenIdCount ? "invalid" : ""}`}>
+              {invalidCitizenIdCount ? <AlertCircle /> : <Check />}
+              {invalidCitizenIdCount ? `${invalidCitizenIdCount} CCCD không hợp lệ` : "Sẵn sàng nhập"}
             </span>
             <button className="icon-button" onClick={reset}>
               <X />
@@ -2986,7 +3219,7 @@ function ImportPage({
                 </thead>
                 <tbody>
                   {employeeRows.slice(0, 8).map((row, index) => (
-                    <tr key={index}>
+                    <tr key={index} className={!/^\d{12}$/.test(row.citizenId) ? "invalid-import-row" : ""}>
                       <td>{index + 1}</td>
                       <td className="mono">{row.citizenId}</td>
                       <td>
@@ -3013,7 +3246,7 @@ function ImportPage({
                 </thead>
                 <tbody>
                   {achievementRows.slice(0, 8).map((row, index) => (
-                    <tr key={index}>
+                    <tr key={index} className={!/^\d{12}$/.test(row.citizenId) ? "invalid-import-row" : ""}>
                       <td>{index + 1}</td>
                       <td className="mono">{row.citizenId}</td>
                       <td>{typeLabels[row.type]}</td>
@@ -3039,7 +3272,7 @@ function ImportPage({
             <button
               className="primary-button"
               onClick={() => void upload()}
-              disabled={loading || !rowCount}
+              disabled={loading || !rowCount || Boolean(invalidCitizenIdCount)}
             >
               {loading ? (
                 <RefreshCw className="spin" size={17} />
@@ -3557,6 +3790,7 @@ function normalize(v: string) {
   return v
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[đĐ]/g, "d")
     .toLowerCase()
     .trim();
 }
@@ -3593,6 +3827,16 @@ function parseAchievementLevel(value: string): AchievementLevel {
   if (key.includes("hang nhi") || key.includes("hang hai")) return "HANG_HAI";
   if (key.includes("hang ba")) return "HANG_BA";
   return "CO_SO";
+}
+function excelCitizenId(value: unknown) {
+  if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) {
+    return String(value).padStart(12, "0");
+  }
+  return String(value ?? "").trim();
+}
+function citizenIdForExport(value: unknown) {
+  const citizenId = String(value ?? "").trim();
+  return /^\d{1,12}$/.test(citizenId) ? citizenId.padStart(12, "0") : citizenId;
 }
 function excelDate(v: unknown) {
   if (v instanceof Date) return v.toISOString().slice(0, 10);

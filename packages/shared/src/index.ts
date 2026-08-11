@@ -27,6 +27,14 @@ export function levelsForAchievementType(type: AchievementType): readonly [Achie
   return achievementLevelsByType[type] as readonly [AchievementLevel, ...AchievementLevel[]];
 }
 
+export function levelsAtOrAbove(type: AchievementType, minimum: AchievementLevel, exact = false): AchievementLevel[] {
+  const levels = levelsForAchievementType(type);
+  if (exact || minimum === "KHAC") return [minimum];
+  const index = levels.indexOf(minimum);
+  if (index < 0) return [];
+  return levels.slice(index).filter((level) => level !== "KHAC");
+}
+
 export function isAchievementLevelValid(type: string, level: string): boolean {
   if (!achievementTypes.includes(type as AchievementType)) return false;
   return (levelsForAchievementType(type as AchievementType) as readonly string[]).includes(level);
@@ -37,7 +45,7 @@ export function isRewardType(type: string): type is RewardType {
 }
 
 export const employeeSchema = z.object({
-  citizenId: z.string().trim().regex(/^\d{9,12}$/, "CCCD phải gồm 9–12 chữ số"),
+  citizenId: z.string().trim().regex(/^\d{12}$/, "CCCD phải gồm đúng 12 chữ số"),
   fullName: z.string().trim().min(2).max(120),
   gender: z.enum(["NAM", "NU", "KHAC"]),
   dateOfBirth: z.string().date(),
@@ -81,6 +89,10 @@ export const filterSchema = z.object({
   achievementLevel: z.enum(achievementLevels).optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25)
+}).superRefine((value, context) => {
+  if (value.achievementLevel && (!value.achievementType || !isAchievementLevelValid(value.achievementType, value.achievementLevel))) {
+    context.addIssue({ code: "custom", path: ["achievementLevel"], message: "Cấp / hạng không thuộc loại thành tích đã chọn." });
+  }
 });
 
 export type EmployeeInput = z.infer<typeof employeeSchema>;
