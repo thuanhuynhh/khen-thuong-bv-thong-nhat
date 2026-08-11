@@ -41,6 +41,8 @@ export const api = {
   importEmployees: (rows: EmployeeInput[], overwriteExisting = false) => request<{ accepted: number; inserted: number; updated: number; skipped: number; rejected: number; errors: unknown[] }>("/api/employees/import", { method: "POST", body: JSON.stringify({ rows, overwriteExisting }) }),
   importAchievements: (rows: AchievementImportInput[]) => request<{ accepted: number; rejected: number; errors: Array<{row:number;message:string}> }>("/api/achievements/import", { method: "POST", body: JSON.stringify({ rows }) }),
   createAchievement: (data: AchievementInput) => request<{ id: string }>("/api/achievements", { method: "POST", body: JSON.stringify(data) }),
+  updateAchievement: (id: string, data: AchievementInput) => request<{ ok: true }>(`/api/achievements/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  deleteAchievement: (id: string) => request<{ ok: true }>(`/api/achievements/${id}`, { method: "DELETE" }),
   uploadAchievementFile: (achievementId: string, file: File) => {
     const body = new FormData(); body.append("file", file);
     return request<{ id: string; fileName: string }>(`/api/achievements/${achievementId}/attachments`, { method: "POST", body });

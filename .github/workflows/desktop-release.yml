@@ -18,8 +18,15 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
-      - name: Build and publish GitHub Release
-        run: npm run publish:win -w @thongnhat/desktop
+      - name: Build Windows release
+        run: npm run release:win -w @thongnhat/desktop
+        env:
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
+      - name: Publish GitHub Release
+        shell: pwsh
+        run: |
+          $version = node -p "require('./apps/desktop/package.json').version"
+          $directory = "apps/desktop/release/$version"
+          gh release create "${{ github.ref_name }}" "$directory/KhenThuong-ThongNhat-$version-x64.exe" "$directory/KhenThuong-ThongNhat-$version-x64.exe.blockmap" "$directory/latest.yml" --title "$version" --generate-notes --verify-tag
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VITE_API_URL: ${{ vars.VITE_API_URL }}

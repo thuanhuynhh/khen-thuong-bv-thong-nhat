@@ -1105,9 +1105,10 @@ function EmployeesPage({
                         event.stopPropagation();
                         setSelectedId(String(employee.id));
                       }}
-                      aria-label={`Mở hồ sơ ${employee.fullName}`}
+                      aria-label={`Sửa hồ sơ ${employee.fullName}`}
+                      title="Sửa hồ sơ"
                     >
-                      <ChevronRight size={18} />
+                      <Pencil size={17} />
                     </button>
                     <button
                       className="row-action delete"
@@ -1363,6 +1364,9 @@ function EmployeeDetailModal({
   const [error, setError] = useState("");
   const [achievementType, setAchievementType] =
     useState<AchievementType | null>(null);
+  const [editingAchievement, setEditingAchievement] =
+    useState<Record<string, unknown> | null>(null);
+  const [deletingAchievementId, setDeletingAchievementId] = useState<string | null>(null);
   const [birthDate, setBirthDate] = useState("");
   const [form, setForm] = useState<EmployeeInput | null>(null);
   const applyEmployee = (value: Record<string, unknown>) => {
@@ -1394,6 +1398,28 @@ function EmployeeDetailModal({
   const achievements =
     (employee?.achievements as Array<Record<string, unknown>> | undefined) ??
     [];
+  const removeAchievement = async (item: Record<string, unknown>) => {
+    const achievementId = String(item.id);
+    const label = String(
+      item.title || typeLabels[item.type as AchievementType] || "thành tích",
+    );
+    if (!window.confirm(`Xóa “${label}”? Minh chứng đính kèm cũng sẽ bị xóa.`))
+      return;
+    setDeletingAchievementId(achievementId);
+    try {
+      await api.deleteAchievement(achievementId);
+      toast("success", "Đã xóa thành tích.");
+      load();
+      onChanged();
+    } catch (err) {
+      toast(
+        "error",
+        err instanceof Error ? err.message : "Không thể xóa thành tích.",
+      );
+    } finally {
+      setDeletingAchievementId(null);
+    }
+  };
   const update = (key: keyof EmployeeInput, value: string | boolean) =>
     setForm((current) => (current ? { ...current, [key]: value } : current));
   const saveProfile = async (event: React.FormEvent) => {
@@ -1580,22 +1606,46 @@ function EmployeeDetailModal({
                     key={type}
                     type={type}
                     items={achievements.filter((item) => item.type === type)}
-                    onAdd={() => setAchievementType(type)}
+                    onAdd={() => {
+                      setEditingAchievement(null);
+                      setAchievementType(type);
+                    }}
+                    onEdit={(item) => {
+                      setAchievementType(null);
+                      setEditingAchievement(item);
+                    }}
+                    onDelete={(item) => void removeAchievement(item)}
+                    deletingId={deletingAchievementId}
                   />
                 ))}
               </div>
             </main>
           </div>
         )}
-        {achievementType && employee && (
+        {(achievementType || editingAchievement) && employee && (
           <AchievementModal
             employeeId={id}
             employeeName={String(employee.fullName)}
-            initialType={achievementType}
-            onClose={() => setAchievementType(null)}
-            onSaved={() => {
+            initialType={
+              editingAchievement
+                ? (editingAchievement.type as AchievementType)
+                : achievementType ?? "RESEARCH"
+            }
+            initialAchievement={editingAchievement ?? undefined}
+            onClose={() => {
               setAchievementType(null);
-              toast("success", "Đã thêm thành tích và minh chứng.");
+              setEditingAchievement(null);
+            }}
+            onSaved={() => {
+              const edited = Boolean(editingAchievement);
+              setAchievementType(null);
+              setEditingAchievement(null);
+              toast(
+                "success",
+                edited
+                  ? "Đã cập nhật thành tích."
+                  : "Đã thêm thành tích và minh chứng.",
+              );
               load();
               onChanged();
             }}
@@ -1610,10 +1660,16 @@ function AchievementTable({
   type,
   items,
   onAdd,
+  onEdit,
+  onDelete,
+  deletingId,
 }: {
   type: AchievementType;
   items: Array<Record<string, unknown>>;
   onAdd: () => void;
+  onEdit: (item: Record<string, unknown>) => void;
+  onDelete: (item: Record<string, unknown>) => void;
+  deletingId: string | null;
 }) {
   const isTaskCompletion = type === "TASK_COMPLETION";
   return (
@@ -1639,6 +1695,7 @@ function AchievementTable({
                   <th>Số quyết định</th>
                   <th>Ngày đánh giá</th>
                   <th>Ghi chú</th>
+                  <th className="action-column">Thao tác</th>
                 </tr>
               ) : (
                 <tr>
@@ -1648,6 +1705,7 @@ function AchievementTable({
                   <th>Số quyết định</th>
                   <th>Ngày ghi nhận</th>
                   <th>Vai trò</th>
+                  <th className="action-column">Thao tác</th>
                 </tr>
               )}
             </thead>
@@ -1666,6 +1724,12 @@ function AchievementTable({
                     <td className="mono">{String(item.decisionNumber || "—")}</td>
                     <td>{formatDate(item.acceptedDate)}</td>
                     <td>{String(item.notes || "—")}</td>
+                    <AchievementRowActions
+                      item={item}
+                      onEdit={onEdit}
+                      onDelete={onDelete}
+                      deleting={deletingId === String(item.id)}
+                    />
                   </tr>
                 ) : (
                   <tr key={String(item.id)}>
@@ -1684,6 +1748,12 @@ function AchievementTable({
                     <td className="mono">{String(item.decisionNumber || "—")}</td>
                     <td>{formatDate(item.acceptedDate)}</td>
                     <td>{String(item.role || "—")}</td>
+                    <AchievementRowActions
+                      item={item}
+                      onEdit={onEdit}
+                      onDelete={onDelete}
+                      deleting={deletingId === String(item.id)}
+                    />
                   </tr>
                 ),
               )}
@@ -1703,37 +1773,86 @@ function AchievementTable({
   );
 }
 
+function AchievementRowActions({
+  item,
+  onEdit,
+  onDelete,
+  deleting,
+}: {
+  item: Record<string, unknown>;
+  onEdit: (item: Record<string, unknown>) => void;
+  onDelete: (item: Record<string, unknown>) => void;
+  deleting: boolean;
+}) {
+  const label = String(
+    item.title || typeLabels[item.type as AchievementType] || "thành tích",
+  );
+  return (
+    <td className="achievement-actions">
+      <button
+        type="button"
+        className="row-action"
+        onClick={() => onEdit(item)}
+        aria-label={`Sửa ${label}`}
+        title="Sửa"
+      >
+        <Pencil size={16} />
+      </button>
+      <button
+        type="button"
+        className="row-action delete"
+        disabled={deleting}
+        onClick={() => onDelete(item)}
+        aria-label={`Xóa ${label}`}
+        title="Xóa"
+      >
+        {deleting ? (
+          <RefreshCw className="spin" size={16} />
+        ) : (
+          <Trash2 size={16} />
+        )}
+      </button>
+    </td>
+  );
+}
+
 function AchievementModal({
   employeeId,
   employeeName,
   initialType = "RESEARCH",
+  initialAchievement,
   onClose,
   onSaved,
 }: {
   employeeId: string;
   employeeName: string;
   initialType?: AchievementType;
+  initialAchievement?: Record<string, unknown>;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const input = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [acceptedDate, setAcceptedDate] = useState("");
+  const [acceptedDate, setAcceptedDate] = useState(() =>
+    initialAchievement ? formatDate(initialAchievement.acceptedDate) : "",
+  );
   const [files, setFiles] = useState<File[]>([]);
   const [drag, setDrag] = useState(false);
-  const [form, setForm] = useState<AchievementInput>({
+  const [form, setForm] = useState<AchievementInput>(() => ({
     employeeId,
     type: initialType,
-    level: levelsForAchievementType(initialType)[0],
-    title: "",
-    acceptedDate: "",
-    year: new Date().getFullYear(),
-    organization: "",
-    decisionNumber: "",
-    role: "",
-    notes: "",
-  });
+    level: initialAchievement
+      ? (initialAchievement.level as AchievementLevel)
+      : levelsForAchievementType(initialType)[0],
+    title: String(initialAchievement?.title ?? ""),
+    acceptedDate: String(initialAchievement?.acceptedDate ?? ""),
+    year: Number(initialAchievement?.year ?? new Date().getFullYear()),
+    organization: String(initialAchievement?.organization ?? ""),
+    decisionNumber: String(initialAchievement?.decisionNumber ?? ""),
+    role: String(initialAchievement?.role ?? ""),
+    notes: String(initialAchievement?.notes ?? ""),
+  }));
   const update = (key: keyof AchievementInput, value: string | number) =>
     setForm((current) => ({ ...current, [key]: value }));
   const addFiles = (list: FileList | null) => {
@@ -1750,7 +1869,7 @@ function AchievementModal({
     }
     setSaving(true);
     try {
-      const result = await api.createAchievement({
+      const payload: AchievementInput = {
         ...form,
         title:
           form.type === "TASK_COMPLETION"
@@ -1758,9 +1877,16 @@ function AchievementModal({
             : form.title,
         acceptedDate: iso,
         year: Number(iso.slice(0, 4)),
-      });
+      };
+      let achievementId: string;
+      if (initialAchievement) {
+        achievementId = String(initialAchievement.id);
+        await api.updateAchievement(achievementId, payload);
+      } else {
+        achievementId = (await api.createAchievement(payload)).id;
+      }
       for (const file of files)
-        await api.uploadAchievementFile(result.id, file);
+        await api.uploadAchievementFile(achievementId, file);
       onSaved();
     } catch (err) {
       setError(
@@ -1779,7 +1905,7 @@ function AchievementModal({
         <div className="modal-head">
           <div>
             <span className="eyebrow teal">THÀNH TÍCH HẰNG NĂM</span>
-            <h2>Thêm thành tích</h2>
+            <h2>{initialAchievement ? "Sửa thành tích" : "Thêm thành tích"}</h2>
             <p>{employeeName}</p>
           </div>
           <button
@@ -1947,7 +2073,8 @@ function AchievementModal({
             Hủy
           </button>
           <button className="primary-button" disabled={saving}>
-            {saving && <RefreshCw className="spin" size={17} />}Lưu thành tích
+            {saving && <RefreshCw className="spin" size={17} />}
+            {initialAchievement ? "Lưu thay đổi" : "Lưu thành tích"}
           </button>
         </div>
       </form>

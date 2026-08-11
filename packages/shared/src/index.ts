@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const roles = ["ADMIN", "HR", "REVIEWER", "VIEWER"] as const;
-export const achievementTypes = ["EMULATION", "RESEARCH", "TASK_COMPLETION", "CERTIFICATE", "MEDAL", "OTHER"] as const;
+export const achievementTypes = ["TASK_COMPLETION", "EMULATION", "RESEARCH", "CERTIFICATE", "MEDAL", "OTHER"] as const;
 export const rewardTypes = ["EMULATION", "RESEARCH", "CERTIFICATE", "MEDAL", "OTHER"] as const;
 export const achievementLevels = [
   "CO_SO", "TRUONG_DAI_HOC", "THANH_PHO", "BO", "NHA_NUOC", "TOAN_QUOC",
