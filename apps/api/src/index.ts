@@ -475,7 +475,7 @@ app.get("/api/reward-rules", async (c) => {
   return c.json({ items: rows.results.map(row => ({ ...row, conditions: JSON.parse(String(row.conditions_json)) })) });
 });
 
-app.post("/api/reward-rules", requireRole(["ADMIN"]), async (c) => {
+app.post("/api/reward-rules", requireRole(["ADMIN", "HR"]), async (c) => {
   const body = await c.req.json<{ name?: string; rewardType?: string; rewardLevel?: string; conditions?: unknown; priority?: number; year?: number }>();
   const conditions = normalizeRewardConditions(body.conditions);
   const year = Math.trunc(Number(body.year));
@@ -502,7 +502,7 @@ app.post("/api/reward-rules", requireRole(["ADMIN"]), async (c) => {
   return c.json({ id }, 201);
 });
 
-app.post("/api/reward-rules/:id/refresh", requireRole(["ADMIN"]), async (c) => {
+app.post("/api/reward-rules/:id/refresh", requireRole(["ADMIN", "HR"]), async (c) => {
   const id = c.req.param("id");
   const rule = await c.env.DB.prepare("SELECT * FROM reward_rules WHERE id=?").bind(id).first<Record<string, unknown>>();
   if (!rule) return c.json({ error: "Không tìm thấy đề xuất." }, 404);
@@ -520,7 +520,7 @@ app.post("/api/reward-rules/:id/refresh", requireRole(["ADMIN"]), async (c) => {
   return c.json({ ok: true, employees: count?.value ?? 0 });
 });
 
-app.put("/api/reward-rules/:id", requireRole(["ADMIN"]), async (c) => {
+app.put("/api/reward-rules/:id", requireRole(["ADMIN", "HR"]), async (c) => {
   const body = await c.req.json<{ name?: string; rewardType?: string; rewardLevel?: string; conditions?: unknown; priority?: number; active?: boolean }>();
   const conditions = normalizeRewardConditions(body.conditions);
   if (
@@ -539,7 +539,7 @@ app.put("/api/reward-rules/:id", requireRole(["ADMIN"]), async (c) => {
   return c.json({ ok: true });
 });
 
-app.delete("/api/reward-rules/:id", requireRole(["ADMIN"]), async (c) => {
+app.delete("/api/reward-rules/:id", requireRole(["ADMIN", "HR"]), async (c) => {
   const result = await c.env.DB.prepare("DELETE FROM reward_rules WHERE id=?").bind(c.req.param("id")).run();
   if (!result.meta.changes) return c.json({ error: "Không tìm thấy bộ tiêu chuẩn." }, 404);
   await audit(c.env, c.get("user").id, "DELETE", "REWARD_RULE", c.req.param("id"));

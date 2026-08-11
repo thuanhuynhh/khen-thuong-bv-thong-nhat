@@ -377,7 +377,7 @@ export default function App() {
           )}
           {activePage === "employees" && <EmployeesPage toast={toast} />}
           {activePage === "candidates" && (
-            <CandidatesPage toast={toast} canManage={currentUser.role === "ADMIN"} />
+            <CandidatesPage toast={toast} canManage={["ADMIN", "HR"].includes(currentUser.role)} />
           )}
           {activePage === "import" && <ImportPage toast={toast} />}
           {activePage === "users" && (
