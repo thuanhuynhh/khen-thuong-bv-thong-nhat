@@ -1,6 +1,6 @@
 {
   "name": "@thongnhat/desktop",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Ứng dụng quản lý thành tích và khen thưởng Bệnh viện Thống Nhất",
   "author": "Bệnh viện Thống Nhất",
   "private": true,
@@ -21,7 +21,8 @@
     "lucide-react": "^0.539.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
-    "read-excel-file": "^9.3.10"
+    "read-excel-file": "^9.3.10",
+    "write-excel-file": "^4.1.1"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",

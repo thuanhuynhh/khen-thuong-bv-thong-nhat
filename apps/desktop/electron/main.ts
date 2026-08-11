@@ -8,6 +8,7 @@ const { autoUpdater } = require("electron-updater") as typeof import("electron-u
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 let mainWindow: BrowserWindow | null = null;
+let installingUpdate = false;
 
 protocol.registerSchemesAsPrivileged([{ scheme: "app", privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 
@@ -43,15 +44,18 @@ ipcMain.handle("updater:check", async () => {
   const result = await autoUpdater.checkForUpdates();
   return { status: result?.updateInfo.version === app.getVersion() ? "current" : "available", version: result?.updateInfo.version };
 });
-ipcMain.handle("updater:install", () => { autoUpdater.quitAndInstall(false, true); });
-
 autoUpdater.autoDownload = true;
 autoUpdater.autoInstallOnAppQuit = true;
 autoUpdater.on("checking-for-update", () => sendUpdate("checking"));
 autoUpdater.on("update-available", (info) => sendUpdate("available", { version: info.version }));
 autoUpdater.on("update-not-available", () => sendUpdate("current"));
 autoUpdater.on("download-progress", (progress) => sendUpdate("downloading", { percent: Math.round(progress.percent) }));
-autoUpdater.on("update-downloaded", (info) => sendUpdate("ready", { version: info.version }));
+autoUpdater.on("update-downloaded", (info) => {
+  sendUpdate("ready", { version: info.version });
+  if (installingUpdate) return;
+  installingUpdate = true;
+  setTimeout(() => autoUpdater.quitAndInstall(true, true), 250);
+});
 autoUpdater.on("error", (error) => sendUpdate("error", { message: error.message }));
 
 app.whenReady().then(() => {

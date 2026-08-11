@@ -37,6 +37,7 @@ export const api = {
   options: () => request<{ units: string[]; education: string[]; positions: string[] }>("/api/employees/options"),
   createEmployee: (data: EmployeeInput) => request<{ id: string }>("/api/employees", { method: "POST", body: JSON.stringify(data) }),
   updateEmployee: (id: string, data: EmployeeInput) => request<{ ok: true }>(`/api/employees/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  deleteEmployees: (ids: string[]) => request<{ deleted: number }>("/api/employees/bulk-delete", { method: "POST", body: JSON.stringify({ ids }) }),
   importEmployees: (rows: EmployeeInput[], overwriteExisting = false) => request<{ accepted: number; inserted: number; updated: number; skipped: number; rejected: number; errors: unknown[] }>("/api/employees/import", { method: "POST", body: JSON.stringify({ rows, overwriteExisting }) }),
   importAchievements: (rows: AchievementImportInput[]) => request<{ accepted: number; rejected: number; errors: Array<{row:number;message:string}> }>("/api/achievements/import", { method: "POST", body: JSON.stringify({ rows }) }),
   createAchievement: (data: AchievementInput) => request<{ id: string }>("/api/achievements", { method: "POST", body: JSON.stringify(data) }),

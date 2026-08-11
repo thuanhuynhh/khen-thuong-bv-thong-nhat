@@ -1,18 +1,22 @@
 import { z } from "zod";
 
 export const roles = ["ADMIN", "HR", "REVIEWER", "VIEWER"] as const;
-export const achievementTypes = ["RESEARCH", "EMULATION", "CERTIFICATE", "MEDAL", "OTHER"] as const;
+export const achievementTypes = ["EMULATION", "RESEARCH", "TASK_COMPLETION", "CERTIFICATE", "MEDAL", "OTHER"] as const;
+export const rewardTypes = ["EMULATION", "RESEARCH", "CERTIFICATE", "MEDAL", "OTHER"] as const;
 export const achievementLevels = [
   "CO_SO", "TRUONG_DAI_HOC", "THANH_PHO", "BO", "NHA_NUOC", "TOAN_QUOC",
-  "THU_TUONG", "HANG_BA", "HANG_HAI", "HANG_NHAT", "KHAC"
+  "THU_TUONG", "HANG_BA", "HANG_HAI", "HANG_NHAT", "KHONG_HOAN_THANH",
+  "HOAN_THANH", "HOAN_THANH_TOT", "HOAN_THANH_XUAT_SAC", "KHAC"
 ] as const;
 
 export type Role = typeof roles[number];
 export type AchievementType = typeof achievementTypes[number];
+export type RewardType = typeof rewardTypes[number];
 export type AchievementLevel = typeof achievementLevels[number];
 
 export const achievementLevelsByType = {
   RESEARCH: ["CO_SO", "TRUONG_DAI_HOC", "THANH_PHO", "BO", "NHA_NUOC", "KHAC"],
+  TASK_COMPLETION: ["KHONG_HOAN_THANH", "HOAN_THANH", "HOAN_THANH_TOT", "HOAN_THANH_XUAT_SAC"],
   EMULATION: ["CO_SO", "THANH_PHO", "BO", "TOAN_QUOC", "KHAC"],
   CERTIFICATE: ["THANH_PHO", "BO", "THU_TUONG", "KHAC"],
   MEDAL: ["HANG_BA", "HANG_HAI", "HANG_NHAT"],
@@ -26,6 +30,10 @@ export function levelsForAchievementType(type: AchievementType): readonly [Achie
 export function isAchievementLevelValid(type: string, level: string): boolean {
   if (!achievementTypes.includes(type as AchievementType)) return false;
   return (levelsForAchievementType(type as AchievementType) as readonly string[]).includes(level);
+}
+
+export function isRewardType(type: string): type is RewardType {
+  return rewardTypes.includes(type as RewardType);
 }
 
 export const employeeSchema = z.object({
@@ -87,8 +95,12 @@ export interface SessionUser { id: string; username: string; displayName: string
 export const levelLabels: Record<AchievementLevel, string> = {
   CO_SO: "Cấp cơ sở", TRUONG_DAI_HOC: "Cấp trường đại học", THANH_PHO: "Cấp thành phố",
   BO: "Cấp Bộ", NHA_NUOC: "Cấp Nhà nước", TOAN_QUOC: "Toàn quốc", THU_TUONG: "Thủ tướng",
-  HANG_BA: "Hạng Ba", HANG_HAI: "Hạng Nhì", HANG_NHAT: "Hạng Nhất", KHAC: "Khác"
+  HANG_BA: "Hạng Ba", HANG_HAI: "Hạng Nhì", HANG_NHAT: "Hạng Nhất",
+  KHONG_HOAN_THANH: "Không hoàn thành nhiệm vụ", HOAN_THANH: "Hoàn thành nhiệm vụ",
+  HOAN_THANH_TOT: "Hoàn thành tốt nhiệm vụ", HOAN_THANH_XUAT_SAC: "Hoàn thành xuất sắc nhiệm vụ",
+  KHAC: "Khác"
 };
 export const typeLabels: Record<AchievementType, string> = {
-  RESEARCH: "Đề tài", EMULATION: "Chiến sĩ thi đua", CERTIFICATE: "Bằng khen", MEDAL: "Huân chương", OTHER: "Khác"
+  EMULATION: "Chiến sĩ thi đua", RESEARCH: "Đề tài", TASK_COMPLETION: "Hoàn thành nhiệm vụ",
+  CERTIFICATE: "Bằng khen", MEDAL: "Huân chương", OTHER: "Khác"
 };

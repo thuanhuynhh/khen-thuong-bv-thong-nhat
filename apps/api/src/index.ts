@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 import { cors } from "hono/cors";
-import { employeeSchema, achievementSchema, filterSchema, isAchievementLevelValid, roles, type Role } from "@thongnhat/shared";
+import { employeeSchema, achievementSchema, filterSchema, isAchievementLevelValid, isRewardType, roles, type Role } from "@thongnhat/shared";
 import { hashPassword, randomToken, sha256, verifyPassword } from "./crypto";
 import type { Bindings, Variables } from "./types";
 
@@ -247,6 +247,20 @@ app.put("/api/employees/:id", requireRole(["ADMIN", "HR"]), async (c) => {
   return c.json({ ok: true });
 });
 
+app.post("/api/employees/bulk-delete", requireRole(["ADMIN"]), async (c) => {
+  const body = await c.req.json<{ ids?: unknown[] }>();
+  const ids = [...new Set((body.ids ?? []).filter((id): id is string => typeof id === "string" && id.length > 0))];
+  if (!ids.length || ids.length > 100) return c.json({ error: "Chọn từ 1 đến 100 nhân viên để xóa." }, 400);
+  const placeholders = ids.map(() => "?").join(",");
+  const keys = await c.env.DB.prepare(
+    `SELECT object_key FROM attachments WHERE achievement_id IN (SELECT id FROM achievements WHERE employee_id IN (${placeholders}))`,
+  ).bind(...ids).all<{ object_key: string }>();
+  if (keys.results.length) await c.env.MEDIA.delete(keys.results.map((row) => row.object_key));
+  const result = await c.env.DB.prepare(`DELETE FROM employees WHERE id IN (${placeholders})`).bind(...ids).run();
+  await audit(c.env, c.get("user").id, "BULK_DELETE", "EMPLOYEE", undefined, { ids, deleted: result.meta.changes });
+  return c.json({ deleted: result.meta.changes });
+});
+
 app.delete("/api/employees/:id", requireRole(["ADMIN"]), async (c) => {
   const id = c.req.param("id");
   const keys = await c.env.DB.prepare("SELECT object_key FROM attachments WHERE achievement_id IN (SELECT id FROM achievements WHERE employee_id=?)").bind(id).all<{ object_key: string }>();
@@ -389,6 +403,7 @@ app.post("/api/reward-rules", requireRole(["ADMIN"]), async (c) => {
     !body.rewardType ||
     !body.rewardLevel ||
     !conditions.groups.length ||
+    !isRewardType(body.rewardType) ||
     !isAchievementLevelValid(body.rewardType, body.rewardLevel) ||
     !areRewardConditionsValid(conditions)
   ) {
@@ -409,6 +424,7 @@ app.put("/api/reward-rules/:id", requireRole(["ADMIN"]), async (c) => {
     !body.rewardType ||
     !body.rewardLevel ||
     !conditions.groups.length ||
+    !isRewardType(body.rewardType) ||
     !isAchievementLevelValid(body.rewardType, body.rewardLevel) ||
     !areRewardConditionsValid(conditions)
   ) return c.json({ error: "Bộ tiêu chuẩn không hợp lệ." }, 400);

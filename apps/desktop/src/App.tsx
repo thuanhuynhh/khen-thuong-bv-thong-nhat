@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { readSheet } from "read-excel-file/browser";
+import writeXlsxFile, { type SheetData } from "write-excel-file/browser";
 import {
   Award,
   Bell,
@@ -9,7 +10,6 @@ import {
   Download,
   FileCheck2,
   FileSpreadsheet,
-  Filter,
   LayoutDashboard,
   LogOut,
   Medal,
@@ -21,6 +21,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
+  Trash2,
   UploadCloud,
   UserRound,
   Users,
@@ -34,12 +35,14 @@ import {
   achievementTypes,
   levelLabels,
   levelsForAchievementType,
+  rewardTypes,
   roles,
   typeLabels,
   type AchievementInput,
   type AchievementLevel,
   type AchievementType,
   type EmployeeInput,
+  type RewardType,
   type Role,
   type SessionUser,
 } from "@thongnhat/shared";
@@ -52,7 +55,6 @@ import {
   type UserCounts,
   type UserRecord,
 } from "./api";
-import { demoEmployees } from "./demo";
 import hospitalLogo from "./assets/logo-bvtn.png";
 
 type Page =
@@ -101,7 +103,6 @@ const nav: Array<{
 
 export default function App() {
   const [user, setUser] = useState<SessionUser | null>(null);
-  const [demo, setDemo] = useState(false);
   const [page, setPage] = useState<Page>("dashboard");
   const [collapsed, setCollapsed] = useState(false);
   const [loadingSession, setLoadingSession] = useState(hasToken());
@@ -183,7 +184,6 @@ export default function App() {
         state={update}
         onRetry={checkUpdate}
         onSkip={() => setSkipUpdate(true)}
-        onInstall={() => void window.desktop?.installUpdate()}
       />
     );
   if (loadingSession)
@@ -195,19 +195,13 @@ export default function App() {
         <div className="boot-line" />
       </div>
     );
-  if (!user && !demo) return <Login onLogin={setUser} />;
+  if (!user) return <Login onLogin={setUser} />;
 
-  const currentUser = user ?? {
-    id: "demo",
-    username: "demo",
-    displayName: "Nguyễn Thanh Vân",
-    role: "ADMIN" as const,
-  };
+  const currentUser = user;
   const logout = async () => {
-    if (!demo) await api.logout().catch(() => undefined);
+    await api.logout().catch(() => undefined);
     setToken("");
     setUser(null);
-    setDemo(false);
   };
 
   return (
@@ -274,7 +268,6 @@ export default function App() {
             </strong>
           </div>
           <div className="top-actions">
-            {demo && <span className="demo-badge">Dữ liệu minh họa</span>}
             <button className="icon-button" aria-label="Thông báo">
               <Bell size={19} />
               <i />
@@ -299,16 +292,15 @@ export default function App() {
         <main id="main-content">
           {page === "dashboard" && (
             <Dashboard
-              demo={demo}
               displayName={currentUser.displayName}
               onNavigate={setPage}
             />
           )}
-          {page === "employees" && <EmployeesPage demo={demo} toast={toast} />}
+          {page === "employees" && <EmployeesPage toast={toast} />}
           {page === "candidates" && (
-            <CandidatesPage demo={demo} toast={toast} />
+            <CandidatesPage toast={toast} />
           )}
-          {page === "import" && <ImportPage demo={demo} toast={toast} />}
+          {page === "import" && <ImportPage toast={toast} />}
           {page === "users" && (
             <UsersPage
               user={currentUser}
@@ -345,36 +337,33 @@ function UpdateScreen({
   state,
   onRetry,
   onSkip,
-  onInstall,
 }: {
   state: UpdateState;
   onRetry: () => void;
   onSkip: () => void;
-  onInstall: () => void;
 }) {
-  const copy = {
-    checking: [
-      "Đang kiểm tra phiên bản mới",
-      "Hệ thống đang kết nối máy chủ cập nhật.",
-    ],
-    available: [
-      "Đã tìm thấy phiên bản mới",
-      `Đang chuẩn bị tải phiên bản ${state.version ? `v${state.version}` : "mới"}.`,
-    ],
-    downloading: [
-      "Đang tải bản cập nhật",
-      `Đã tải ${state.percent}% · vui lòng không đóng ứng dụng.`,
-    ],
-    ready: [
-      "Bản cập nhật đã sẵn sàng",
-      `Phiên bản ${state.version ? `v${state.version}` : "mới"} đã tải xong.`,
-    ],
-    error: [
-      "Không thể kiểm tra cập nhật",
-      state.message || "Kiểm tra kết nối mạng rồi thử lại.",
-    ],
-  } as const;
-  const text = copy[state.status as keyof typeof copy] ?? copy.checking;
+  if (state.status !== "error") {
+    const indeterminate = state.status === "checking" || state.status === "available";
+    return (
+      <div className="update-screen" aria-label="Đang cập nhật ứng dụng">
+        <div className="update-only-progress">
+          <div
+            className="update-progress"
+            role="progressbar"
+            aria-label="Tiến trình cập nhật"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={indeterminate ? undefined : state.percent}
+          >
+            <i
+              className={indeterminate ? "indeterminate" : ""}
+              style={indeterminate ? undefined : { width: `${state.percent}%` }}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="update-screen">
       <div className="update-card">
@@ -382,54 +371,17 @@ function UpdateScreen({
           <HospitalLogo />
         </div>
         <span className="eyebrow teal">BỆNH VIỆN THỐNG NHẤT</span>
-        <h1>{text[0]}</h1>
-        <p>{text[1]}</p>
-        {state.status !== "error" && (
-          <div
-            className="update-progress"
-            role="progressbar"
-            aria-label="Tiến trình cập nhật"
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={
-              state.status === "checking" || state.status === "available"
-                ? undefined
-                : state.percent
-            }
-          >
-            <i
-              className={
-                state.status === "checking" || state.status === "available"
-                  ? "indeterminate"
-                  : ""
-              }
-              style={
-                state.status === "downloading" || state.status === "ready"
-                  ? { width: `${state.percent}%` }
-                  : undefined
-              }
-            />
-          </div>
-        )}
-        {state.status === "downloading" && (
-          <strong className="update-percent">{state.percent}%</strong>
-        )}
-        {state.status === "ready" && (
-          <button className="primary-button full" onClick={onInstall}>
-            Cài đặt và khởi động lại
+        <h1>Không thể kiểm tra cập nhật</h1>
+        <p>{state.message || "Kiểm tra kết nối mạng rồi thử lại."}</p>
+        <div className="update-error-actions">
+          <button className="primary-button" onClick={onRetry}>
+            <RefreshCw size={17} />
+            Thử lại
           </button>
-        )}
-        {state.status === "error" && (
-          <div className="update-error-actions">
-            <button className="primary-button" onClick={onRetry}>
-              <RefreshCw size={17} />
-              Thử lại
-            </button>
-            <button className="ghost-button" onClick={onSkip}>
-              Bỏ qua và đăng nhập
-            </button>
-          </div>
-        )}
+          <button className="ghost-button" onClick={onSkip}>
+            Bỏ qua và đăng nhập
+          </button>
+        </div>
         <small>Ứng dụng tự động kiểm tra cập nhật trước khi đăng nhập.</small>
       </div>
     </div>
@@ -571,11 +523,9 @@ function Login({ onLogin }: { onLogin: (u: SessionUser) => void }) {
 }
 
 function Dashboard({
-  demo,
   displayName,
   onNavigate,
 }: {
-  demo: boolean;
   displayName: string;
   onNavigate: (p: Page) => void;
 }) {
@@ -583,12 +533,11 @@ function Dashboard({
   const year = now.getFullYear();
   const [data, setData] = useState<Record<string, unknown> | null>(null);
   useEffect(() => {
-    if (!demo)
-      void api
-        .dashboard(year)
-        .then(setData)
-        .catch(() => undefined);
-  }, [demo, year]);
+    void api
+      .dashboard(year)
+      .then(setData)
+      .catch(() => undefined);
+  }, [year]);
   const monthly =
     (data?.monthly as number[] | undefined) ??
     Array.from({ length: 12 }, () => 0);
@@ -771,16 +720,17 @@ function Dashboard({
 }
 
 function EmployeesPage({
-  demo,
   toast,
 }: {
-  demo: boolean;
   toast: (t: Toast["type"], m: string) => void;
 }) {
   const pageSize = 25;
-  const [employees, setEmployees] =
-    useState<Array<Record<string, unknown>>>(demoEmployees);
-  const [total, setTotal] = useState(demoEmployees.length);
+  const [employees, setEmployees] = useState<Array<Record<string, unknown>>>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const selectAllRef = useRef<HTMLInputElement>(null);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(true);
@@ -788,17 +738,22 @@ function EmployeesPage({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [units, setUnits] = useState<string[]>([]);
   const [unit, setUnit] = useState("");
+  const [achievementType, setAchievementType] = useState("");
   const [level, setLevel] = useState("");
   const [year, setYear] = useState("");
-  const load = (targetPage = page) => {
-    if (demo) return;
+  const load = (
+    targetPage = page,
+    filters = { search, unit, achievementType, level, year },
+  ) => {
+    setLoading(true);
     const q = new URLSearchParams({
-      search,
+      search: filters.search,
       page: String(targetPage),
       pageSize: String(pageSize),
-      ...(unit && { unit }),
-      ...(level && { achievementLevel: level }),
-      ...(year && { fromYear: year, toYear: year }),
+      ...(filters.unit && { unit: filters.unit }),
+      ...(filters.achievementType && { achievementType: filters.achievementType }),
+      ...(filters.level && { achievementLevel: filters.level }),
+      ...(filters.year && { fromYear: filters.year, toYear: filters.year }),
     });
     api
       .employees(q.toString())
@@ -806,32 +761,42 @@ function EmployeesPage({
         setEmployees(x.items);
         setTotal(x.total);
         setPage(targetPage);
+        setSelectedIds(new Set());
       })
-      .catch((e) => toast("error", e.message));
+      .catch((e) => toast("error", e.message))
+      .finally(() => setLoading(false));
   };
   useEffect(() => {
-    if (demo) {
-      setUnits([...new Set(demoEmployees.map((e) => String(e.unit)))]);
-    } else {
-      void api.options().then((x) => setUnits(x.units));
-      load(1);
-    }
-  }, [demo]);
-  const shown = demo
-    ? employees.filter(
-        (e) =>
-          String(e.fullName).toLowerCase().includes(search.toLowerCase()) ||
-          String(e.citizenId).includes(search),
-      )
-    : employees;
-  const effectiveTotal = demo ? shown.length : total;
+    void api.options().then((x) => setUnits(x.units));
+    load(1);
+  }, []);
+  const shown = employees;
+  const shownIds = shown.map((employee) => String(employee.id));
+  const allSelected = shownIds.length > 0 && shownIds.every((id) => selectedIds.has(id));
+  const someSelected = shownIds.some((id) => selectedIds.has(id));
+  useEffect(() => {
+    if (selectAllRef.current) selectAllRef.current.indeterminate = someSelected && !allSelected;
+  }, [someSelected, allSelected]);
+  const effectiveTotal = total;
   const totalPages = Math.max(1, Math.ceil(effectiveTotal / pageSize));
   const first = effectiveTotal ? (page - 1) * pageSize + 1 : 0;
   const last = Math.min(page * pageSize, effectiveTotal);
   const go = (target: number) => {
     const next = Math.min(Math.max(target, 1), totalPages);
-    if (!demo) load(next);
-    else setPage(next);
+    load(next);
+  };
+  const removeEmployees = async (ids: string[]) => {
+    if (!ids.length || !window.confirm(`Xóa ${ids.length} nhân viên đã chọn? Hồ sơ, thành tích và minh chứng liên quan cũng sẽ bị xóa.`)) return;
+    setDeleting(true);
+    try {
+      const result = await api.deleteEmployees(ids);
+      toast("success", `Đã xóa ${result.deleted} nhân viên.`);
+      load(page);
+    } catch (error) {
+      toast("error", error instanceof Error ? error.message : "Không thể xóa nhân viên.");
+    } finally {
+      setDeleting(false);
+    }
   };
   return (
     <div className="page">
@@ -877,22 +842,6 @@ function EmployeesPage({
         </div>
         {filtersOpen && (
           <div className="filter-drawer">
-            <div className="filter-heading">
-              <div>
-                <Filter size={17} />
-                <strong>Điều kiện lọc</strong>
-              </div>
-              <button
-                className="text-button"
-                onClick={() => {
-                  setUnit("");
-                  setLevel("");
-                  setYear("");
-                }}
-              >
-                Xóa tất cả
-              </button>
-            </div>
             <div className="filter-grid">
               <label>
                 Đơn vị
@@ -906,10 +855,13 @@ function EmployeesPage({
               </label>
               <label>
                 Loại thành tích
-                <select>
-                  <option>Tất cả loại</option>
+                <select
+                  value={achievementType}
+                  onChange={(event) => setAchievementType(event.target.value)}
+                >
+                  <option value="">Tất cả loại</option>
                   {achievementTypes.map((type) => (
-                    <option key={type}>{typeLabels[type]}</option>
+                    <option key={type} value={type}>{typeLabels[type]}</option>
                   ))}
                 </select>
               </label>
@@ -945,6 +897,19 @@ function EmployeesPage({
               >
                 Áp dụng bộ lọc
               </button>
+              <button
+                className="text-button clear-filters"
+                onClick={() => {
+                  setUnit("");
+                  setAchievementType("");
+                  setLevel("");
+                  setYear("");
+                  setPage(1);
+                  load(1, { search, unit: "", achievementType: "", level: "", year: "" });
+                }}
+              >
+                Xóa tất cả
+              </button>
             </div>
           </div>
         )}
@@ -952,23 +917,53 @@ function EmployeesPage({
           <span>
             <strong>{effectiveTotal.toLocaleString("vi-VN")}</strong> nhân viên
           </span>
-          <span>Nhấn vào dòng để mở hồ sơ</span>
+          {selectedIds.size ? (
+            <button
+              className="bulk-delete-button"
+              disabled={deleting}
+              onClick={() => void removeEmployees([...selectedIds])}
+            >
+              <Trash2 size={15} />
+              Xóa {selectedIds.size} đã chọn
+            </button>
+          ) : (
+            <span>Nhấn vào dòng để mở hồ sơ</span>
+          )}
         </div>
         <div className="table-scroll">
           <table>
             <thead>
               <tr>
+                <th className="select-column">
+                  <input
+                    ref={selectAllRef}
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={(event) =>
+                      setSelectedIds(
+                        event.target.checked ? new Set(shownIds) : new Set(),
+                      )
+                    }
+                    aria-label="Chọn tất cả nhân viên trên trang"
+                  />
+                </th>
                 <th>Nhân viên</th>
                 <th>CCCD</th>
                 <th>Đơn vị</th>
                 <th>Chức vụ / chức danh</th>
                 <th>Trình độ</th>
                 <th>Thành tích</th>
-                <th></th>
+                <th className="action-column">Thao tác</th>
               </tr>
             </thead>
             <tbody>
-              {shown.map((employee, index) => (
+              {loading ? (
+                <tr>
+                  <td className="table-loading" colSpan={8}>
+                    Đang tải danh sách nhân viên...
+                  </td>
+                </tr>
+              ) : shown.length ? shown.map((employee, index) => (
                 <tr
                   className="clickable-row"
                   key={String(employee.id)}
@@ -979,6 +974,22 @@ function EmployeesPage({
                       setSelectedId(String(employee.id));
                   }}
                 >
+                  <td className="select-column">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(String(employee.id))}
+                      onClick={(event) => event.stopPropagation()}
+                      onChange={(event) => {
+                        const id = String(employee.id);
+                        setSelectedIds((current) => {
+                          const next = new Set(current);
+                          event.target.checked ? next.add(id) : next.delete(id);
+                          return next;
+                        });
+                      }}
+                      aria-label={`Chọn ${employee.fullName}`}
+                    />
+                  </td>
                   <td>
                     <div className={`person-cell avatar-tone-${index % 5}`}>
                       <div className="mini-avatar">
@@ -1011,7 +1022,7 @@ function EmployeesPage({
                       {String(employee.achievementCount ?? 0)} mục
                     </span>
                   </td>
-                  <td>
+                  <td className="employee-actions">
                     <button
                       className="row-action"
                       onClick={(event) => {
@@ -1022,9 +1033,26 @@ function EmployeesPage({
                     >
                       <ChevronRight size={18} />
                     </button>
+                    <button
+                      className="row-action delete"
+                      disabled={deleting}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void removeEmployees([String(employee.id)]);
+                      }}
+                      aria-label={`Xóa nhân viên ${employee.fullName}`}
+                    >
+                      <Trash2 size={17} />
+                    </button>
                   </td>
                 </tr>
-              ))}
+              )) : (
+                <tr>
+                  <td className="table-loading" colSpan={8}>
+                    Chưa có nhân viên phù hợp.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -1062,7 +1090,6 @@ function EmployeesPage({
       </section>
       {modal && (
         <EmployeeModal
-          demo={demo}
           units={units}
           onClose={() => setModal(false)}
           onSaved={() => {
@@ -1076,8 +1103,7 @@ function EmployeesPage({
       {selectedId && (
         <EmployeeDetailModal
           id={selectedId}
-          demo={demo}
-          fallback={shown.find((x) => String(x.id) === selectedId)}
+          units={units}
           onClose={() => setSelectedId(null)}
           onChanged={() => load(page)}
           toast={toast}
@@ -1088,12 +1114,10 @@ function EmployeesPage({
 }
 
 function EmployeeModal({
-  demo,
   units,
   onClose,
   onSaved,
 }: {
-  demo: boolean;
   units: string[];
   onClose: () => void;
   onSaved: () => void;
@@ -1124,7 +1148,7 @@ function EmployeeModal({
     }
     setSaving(true);
     try {
-      if (!demo) await api.createEmployee({ ...form, dateOfBirth: iso });
+      await api.createEmployee({ ...form, dateOfBirth: iso });
       onSaved();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Không thể lưu hồ sơ.");
@@ -1245,15 +1269,13 @@ function EmployeeModal({
 
 function EmployeeDetailModal({
   id,
-  demo,
-  fallback,
+  units,
   onClose,
   onChanged,
   toast,
 }: {
   id: string;
-  demo: boolean;
-  fallback?: Record<string, unknown>;
+  units: string[];
   onClose: () => void;
   onChanged: () => void;
   toast: (t: Toast["type"], m: string) => void;
@@ -1270,7 +1292,7 @@ function EmployeeDetailModal({
   const [form, setForm] = useState<EmployeeInput | null>(null);
   const applyEmployee = (value: Record<string, unknown>) => {
     setEmployee(value);
-    setBirthDate(formatDate(value.dateOfBirth));
+    setBirthDate(String(value.dateOfBirth ?? ""));
     setForm({
       citizenId: String(value.citizenId ?? ""),
       fullName: String(value.fullName ?? ""),
@@ -1286,11 +1308,6 @@ function EmployeeDetailModal({
     });
   };
   const load = () => {
-    if (demo) {
-      if (fallback) applyEmployee(fallback);
-      setLoading(false);
-      return;
-    }
     setLoading(true);
     api
       .employee(id)
@@ -1298,7 +1315,7 @@ function EmployeeDetailModal({
       .catch((error) => toast("error", error.message))
       .finally(() => setLoading(false));
   };
-  useEffect(load, [id, demo]);
+  useEffect(load, [id]);
   const achievements =
     (employee?.achievements as Array<Record<string, unknown>> | undefined) ??
     [];
@@ -1308,21 +1325,18 @@ function EmployeeDetailModal({
     event.preventDefault();
     if (!form) return;
     setError("");
-    const iso = parseVietnameseDate(birthDate);
+    const iso = /^\d{4}-\d{2}-\d{2}$/.test(birthDate) ? birthDate : null;
     if (!iso) {
-      setError("Ngày sinh phải đúng định dạng dd/mm/yyyy.");
+      setError("Chọn ngày sinh hợp lệ theo định dạng ngày/tháng/năm.");
       return;
     }
     setSaving(true);
     try {
       const next = { ...form, dateOfBirth: iso };
-      if (!demo) await api.updateEmployee(id, next);
+      await api.updateEmployee(id, next);
       setForm(next);
       setEmployee((current) => (current ? { ...current, ...next } : current));
-      toast(
-        "success",
-        demo ? "Đã mô phỏng cập nhật hồ sơ." : "Đã cập nhật hồ sơ nhân viên.",
-      );
+      toast("success", "Đã cập nhật hồ sơ nhân viên.");
       onChanged();
     } catch (err) {
       setError(
@@ -1413,19 +1427,24 @@ function EmployeeDetailModal({
                   <label>
                     Ngày sinh *
                     <input
+                      type="date"
+                      lang="vi-VN"
                       required
                       value={birthDate}
                       onChange={(event) => setBirthDate(event.target.value)}
-                      placeholder="dd/mm/yyyy"
+                      aria-label="Ngày sinh, định dạng ngày tháng năm"
                     />
                   </label>
                 </div>
                 <label>
                   Khoa / phòng *
-                  <input
+                  <SearchableSelect
                     required
                     value={form.unit}
-                    onChange={(event) => update("unit", event.target.value)}
+                    onChange={(value) => update("unit", value)}
+                    options={units}
+                    placeholder="Tìm hoặc nhập khoa / phòng"
+                    allowClear
                   />
                 </label>
                 <label>
@@ -1500,7 +1519,6 @@ function EmployeeDetailModal({
             employeeId={id}
             employeeName={String(employee.fullName)}
             initialType={achievementType}
-            demo={demo}
             onClose={() => setAchievementType(null)}
             onSaved={() => {
               setAchievementType(null);
@@ -1524,6 +1542,7 @@ function AchievementTable({
   items: Array<Record<string, unknown>>;
   onAdd: () => void;
 }) {
+  const isTaskCompletion = type === "TASK_COMPLETION";
   return (
     <section className="achievement-table-card">
       <div className="achievement-table-head">
@@ -1540,36 +1559,61 @@ function AchievementTable({
         <div className="table-scroll">
           <table>
             <thead>
-              <tr>
-                <th>Năm</th>
-                <th>Tên thành tích</th>
-                <th>Cấp / hạng</th>
-                <th>Số quyết định</th>
-                <th>Ngày ghi nhận</th>
-                <th>Vai trò</th>
-              </tr>
+              {isTaskCompletion ? (
+                <tr>
+                  <th>Năm</th>
+                  <th>Mức hoàn thành</th>
+                  <th>Số quyết định</th>
+                  <th>Ngày đánh giá</th>
+                  <th>Ghi chú</th>
+                </tr>
+              ) : (
+                <tr>
+                  <th>Năm</th>
+                  <th>Tên thành tích</th>
+                  <th>Cấp / hạng</th>
+                  <th>Số quyết định</th>
+                  <th>Ngày ghi nhận</th>
+                  <th>Vai trò</th>
+                </tr>
+              )}
             </thead>
             <tbody>
-              {items.map((item) => (
-                <tr key={String(item.id)}>
-                  <td>
-                    <span className="year-pill">{String(item.year)}</span>
-                  </td>
-                  <td>
-                    <strong className="table-main">{String(item.title)}</strong>
-                    <span className="table-sub">
-                      {String(item.organization || "Không ghi đơn vị")}
-                    </span>
-                  </td>
-                  <td>
-                    {levelLabels[item.level as AchievementLevel] ??
-                      String(item.level)}
-                  </td>
-                  <td className="mono">{String(item.decisionNumber || "—")}</td>
-                  <td>{formatDate(item.acceptedDate)}</td>
-                  <td>{String(item.role || "—")}</td>
-                </tr>
-              ))}
+              {items.map((item) =>
+                isTaskCompletion ? (
+                  <tr key={String(item.id)}>
+                    <td>
+                      <span className="year-pill">{String(item.year)}</span>
+                    </td>
+                    <td>
+                      <strong className="task-level">
+                        {levelLabels[item.level as AchievementLevel] ?? String(item.level)}
+                      </strong>
+                    </td>
+                    <td className="mono">{String(item.decisionNumber || "—")}</td>
+                    <td>{formatDate(item.acceptedDate)}</td>
+                    <td>{String(item.notes || "—")}</td>
+                  </tr>
+                ) : (
+                  <tr key={String(item.id)}>
+                    <td>
+                      <span className="year-pill">{String(item.year)}</span>
+                    </td>
+                    <td>
+                      <strong className="table-main">{String(item.title)}</strong>
+                      <span className="table-sub">
+                        {String(item.organization || "Không ghi đơn vị")}
+                      </span>
+                    </td>
+                    <td>
+                      {levelLabels[item.level as AchievementLevel] ?? String(item.level)}
+                    </td>
+                    <td className="mono">{String(item.decisionNumber || "—")}</td>
+                    <td>{formatDate(item.acceptedDate)}</td>
+                    <td>{String(item.role || "—")}</td>
+                  </tr>
+                ),
+              )}
             </tbody>
           </table>
         </div>
@@ -1590,14 +1634,12 @@ function AchievementModal({
   employeeId,
   employeeName,
   initialType = "RESEARCH",
-  demo,
   onClose,
   onSaved,
 }: {
   employeeId: string;
   employeeName: string;
   initialType?: AchievementType;
-  demo: boolean;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -1635,15 +1677,17 @@ function AchievementModal({
     }
     setSaving(true);
     try {
-      if (!demo) {
-        const result = await api.createAchievement({
-          ...form,
-          acceptedDate: iso,
-          year: Number(iso.slice(0, 4)),
-        });
-        for (const file of files)
-          await api.uploadAchievementFile(result.id, file);
-      }
+      const result = await api.createAchievement({
+        ...form,
+        title:
+          form.type === "TASK_COMPLETION"
+            ? levelLabels[form.level]
+            : form.title,
+        acceptedDate: iso,
+        year: Number(iso.slice(0, 4)),
+      });
+      for (const file of files)
+        await api.uploadAchievementFile(result.id, file);
       onSaved();
     } catch (err) {
       setError(
@@ -1691,6 +1735,7 @@ function AchievementModal({
                   ...current,
                   type,
                   level: levelsForAchievementType(type)[0],
+                  title: type === "TASK_COMPLETION" ? levelLabels[levelsForAchievementType(type)[0]] : "",
                 }));
               }}
             >
@@ -1702,7 +1747,7 @@ function AchievementModal({
             </select>
           </label>
           <label>
-            Cấp / hạng
+            {form.type === "TASK_COMPLETION" ? "Mức hoàn thành" : "Cấp / hạng"}
             <select
               value={form.level}
               onChange={(e) => update("level", e.target.value)}
@@ -1714,16 +1759,18 @@ function AchievementModal({
               ))}
             </select>
           </label>
-          <label className="span-2">
-            Tên đề tài / thành tích *
-            <input
-              required
-              value={form.title}
-              onChange={(e) => update("title", e.target.value)}
-            />
-          </label>
+          {form.type !== "TASK_COMPLETION" && (
+            <label className="span-2">
+              Tên đề tài / thành tích *
+              <input
+                required
+                value={form.title}
+                onChange={(e) => update("title", e.target.value)}
+              />
+            </label>
+          )}
           <label>
-            Ngày chấp nhận *
+            {form.type === "TASK_COMPLETION" ? "Ngày đánh giá *" : "Ngày chấp nhận *"}
             <input
               required
               inputMode="numeric"
@@ -1739,21 +1786,25 @@ function AchievementModal({
               onChange={(e) => update("decisionNumber", e.target.value)}
             />
           </label>
-          <label>
-            Đơn vị thực hiện
-            <input
-              value={form.organization}
-              onChange={(e) => update("organization", e.target.value)}
-            />
-          </label>
-          <label>
-            Vai trò
-            <input
-              value={form.role}
-              onChange={(e) => update("role", e.target.value)}
-              placeholder="Chủ nhiệm, thành viên..."
-            />
-          </label>
+          {form.type !== "TASK_COMPLETION" && (
+            <>
+              <label>
+                Đơn vị thực hiện
+                <input
+                  value={form.organization}
+                  onChange={(e) => update("organization", e.target.value)}
+                />
+              </label>
+              <label>
+                Vai trò
+                <input
+                  value={form.role}
+                  onChange={(e) => update("role", e.target.value)}
+                  placeholder="Chủ nhiệm, thành viên..."
+                />
+              </label>
+            </>
+          )}
           <label className="span-2">
             Ghi chú
             <textarea
@@ -1903,10 +1954,8 @@ function SearchableSelect({
 }
 
 function CandidatesPage({
-  demo,
   toast,
 }: {
-  demo: boolean;
   toast: (t: Toast["type"], m: string) => void;
 }) {
   const [year, setYear] = useState(new Date().getFullYear());
@@ -1914,9 +1963,9 @@ function CandidatesPage({
     [],
   );
   const [ruleModal, setRuleModal] = useState(false);
-  const [loading, setLoading] = useState(!demo);
+  const [selectedProposal, setSelectedProposal] = useState<Record<string, unknown> | null>(null);
+  const [loading, setLoading] = useState(true);
   const load = () => {
-    if (demo) return;
     setLoading(true);
     api
       .candidates(year)
@@ -1929,7 +1978,7 @@ function CandidatesPage({
       )
       .finally(() => setLoading(false));
   };
-  useEffect(load, [demo, year]);
+  useEffect(load, [year]);
   const years = Array.from(
     { length: 8 },
     (_, index) => new Date().getFullYear() - index,
@@ -1978,12 +2027,13 @@ function CandidatesPage({
                 <th>Loại khen thưởng</th>
                 <th>Cấp / hạng</th>
                 <th>Nhân viên đạt</th>
+                <th className="action-column">Thao tác</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="proposal-table-empty">
+                  <td colSpan={6} className="proposal-table-empty">
                     Đang tải danh sách đề xuất...
                   </td>
                 </tr>
@@ -1994,7 +2044,16 @@ function CandidatesPage({
                       | Array<Record<string, unknown>>
                       | undefined) ?? [];
                   return (
-                    <tr key={String(proposal.id)}>
+                    <tr
+                      key={String(proposal.id)}
+                      className="clickable-row"
+                      tabIndex={0}
+                      onClick={() => setSelectedProposal(proposal)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ")
+                          setSelectedProposal(proposal);
+                      }}
+                    >
                       <td className="mono">
                         {String(index + 1).padStart(2, "0")}
                       </td>
@@ -2018,12 +2077,24 @@ function CandidatesPage({
                           {employees.length} nhân viên
                         </span>
                       </td>
+                      <td className="user-action-cell">
+                        <button
+                          className="row-action"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setSelectedProposal(proposal);
+                          }}
+                          aria-label={`Xem đề xuất ${proposal.name}`}
+                        >
+                          <ChevronRight size={18} />
+                        </button>
+                      </td>
                     </tr>
                   );
                 })
               ) : (
                 <tr>
-                  <td colSpan={5} className="proposal-table-empty">
+                  <td colSpan={6} className="proposal-table-empty">
                     Chưa có đề xuất. Chọn “Tạo đề xuất” để thêm mới.
                   </td>
                 </tr>
@@ -2034,7 +2105,6 @@ function CandidatesPage({
       </section>
       {ruleModal && (
         <RewardRuleModal
-          demo={demo}
           onClose={() => setRuleModal(false)}
           onSaved={() => {
             setRuleModal(false);
@@ -2043,21 +2113,173 @@ function CandidatesPage({
           }}
         />
       )}
+      {selectedProposal && (
+        <ProposalDetailModal
+          proposal={selectedProposal}
+          year={year}
+          onClose={() => setSelectedProposal(null)}
+          toast={toast}
+        />
+      )}
+    </div>
+  );
+}
+
+function ProposalDetailModal({
+  proposal,
+  year,
+  onClose,
+  toast,
+}: {
+  proposal: Record<string, unknown>;
+  year: number;
+  onClose: () => void;
+  toast: (t: Toast["type"], m: string) => void;
+}) {
+  const [exporting, setExporting] = useState(false);
+  const employees =
+    (proposal.employees as Array<Record<string, unknown>> | undefined) ?? [];
+  const rewardType = proposal.rewardType as AchievementType;
+  const rewardLevel = proposal.rewardLevel as AchievementLevel;
+  const proposalName = String(proposal.name ?? "Đề xuất khen thưởng");
+  const exportExcel = async () => {
+    setExporting(true);
+    try {
+      const header = (value: string) => ({
+        value,
+        fontWeight: "bold" as const,
+        color: "#FFFFFF",
+        backgroundColor: "#007BFF",
+        align: "center" as const,
+      });
+      const rows: SheetData = [
+        [
+          {
+            value: proposalName,
+            fontWeight: "bold",
+            fontSize: 16,
+            columnSpan: 5,
+            align: "center",
+          },
+          null,
+          null,
+          null,
+          null,
+        ],
+        ["Năm xét", year, "Khen thưởng", typeLabels[rewardType] ?? String(proposal.rewardType), levelLabels[rewardLevel] ?? String(proposal.rewardLevel)],
+        [],
+        [header("STT"), header("CCCD"), header("Họ và tên"), header("Khoa / phòng"), header("Kết quả")],
+        ...employees.map((employee, index) => [
+          index + 1,
+          String(employee.citizenId ?? ""),
+          String(employee.fullName ?? ""),
+          String(employee.unit ?? ""),
+          "Đạt yêu cầu",
+        ]),
+      ];
+      const safeName = normalize(proposalName)
+        .replaceAll(/[^a-z0-9]+/g, "-")
+        .replaceAll(/^-|-$/g, "") || "de-xuat-khen-thuong";
+      await writeXlsxFile(rows, {
+        columns: [
+          { width: 8 },
+          { width: 18 },
+          { width: 30 },
+          { width: 34 },
+          { width: 18 },
+        ],
+        sheet: "Danh sách đạt",
+      }).toFile(`${safeName}-${year}.xlsx`);
+      toast("success", `Đã xuất ${employees.length} nhân viên ra Excel.`);
+    } catch (error) {
+      toast("error", error instanceof Error ? error.message : "Không thể xuất Excel.");
+    } finally {
+      setExporting(false);
+    }
+  };
+  return (
+    <div
+      className="modal-backdrop"
+      onMouseDown={(event) => event.target === event.currentTarget && onClose()}
+    >
+      <section className="modal proposal-detail-modal" aria-label={`Chi tiết ${proposalName}`}>
+        <div className="modal-head proposal-detail-head">
+          <div>
+            <span className="eyebrow teal">ĐỀ XUẤT NĂM {year}</span>
+            <h2>{proposalName}</h2>
+            <p>
+              {typeLabels[rewardType] ?? String(proposal.rewardType)} · {levelLabels[rewardLevel] ?? String(proposal.rewardLevel)}
+            </p>
+          </div>
+          <button type="button" className="icon-button" onClick={onClose} aria-label="Đóng">
+            <X />
+          </button>
+        </div>
+        <div className="proposal-detail-toolbar">
+          <div>
+            <strong>{employees.length}</strong>
+            <span>nhân viên đạt yêu cầu</span>
+          </div>
+          <button
+            className="primary-button"
+            disabled={exporting}
+            onClick={() => void exportExcel()}
+          >
+            {exporting ? <RefreshCw className="spin" size={17} /> : <Download size={17} />}
+            Xuất Excel
+          </button>
+        </div>
+        <div className="table-scroll proposal-employee-table">
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Nhân viên</th>
+                <th>CCCD</th>
+                <th>Khoa / phòng</th>
+                <th>Kết quả</th>
+              </tr>
+            </thead>
+            <tbody>
+              {employees.length ? (
+                employees.map((employee, index) => (
+                  <tr key={String(employee.id)}>
+                    <td className="mono">{String(index + 1).padStart(2, "0")}</td>
+                    <td>
+                      <div className="person-cell">
+                        <div className="mini-avatar">{initials(String(employee.fullName))}</div>
+                        <strong>{String(employee.fullName)}</strong>
+                      </div>
+                    </td>
+                    <td className="mono">{String(employee.citizenId)}</td>
+                    <td>{String(employee.unit || "—")}</td>
+                    <td><span className="proposal-qualified">Đạt yêu cầu</span></td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={5} className="proposal-table-empty">
+                    Chưa có nhân viên đạt điều kiện trong năm xét.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </div>
   );
 }
 
 function RewardRuleModal({
-  demo,
   onClose,
   onSaved,
 }: {
-  demo: boolean;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const [name, setName] = useState("");
-  const [rewardType, setRewardType] = useState<AchievementType | "">("");
+  const [rewardType, setRewardType] = useState<RewardType | "">("");
   const [rewardLevel, setRewardLevel] = useState<AchievementLevel | "">("");
   const [priority, setPriority] = useState(100);
   type Condition = {
@@ -2128,14 +2350,13 @@ function RewardRuleModal({
     }
     setSaving(true);
     try {
-      if (!demo)
-        await api.createRewardRule({
-          name,
-          rewardType,
-          rewardLevel,
-          conditions: { operator, groups },
-          priority,
-        });
+      await api.createRewardRule({
+        name,
+        rewardType,
+        rewardLevel,
+        conditions: { operator, groups },
+        priority,
+      });
       onSaved();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Không thể tạo đề xuất.");
@@ -2188,14 +2409,14 @@ function RewardRuleModal({
               required
               value={rewardType}
               onChange={(event) => {
-                setRewardType(event.target.value as AchievementType);
+                setRewardType(event.target.value as RewardType);
                 setRewardLevel("");
               }}
             >
               <option value="" disabled>
                 Chọn loại khen thưởng
               </option>
-              {achievementTypes.map((type) => (
+              {rewardTypes.map((type) => (
                 <option key={type} value={type}>
                   {typeLabels[type]}
                 </option>
@@ -2448,10 +2669,8 @@ function RewardRuleModal({
 }
 
 function ImportPage({
-  demo,
   toast,
 }: {
-  demo: boolean;
   toast: (t: Toast["type"], m: string) => void;
 }) {
   const input = useRef<HTMLInputElement>(null);
@@ -2567,12 +2786,7 @@ function ImportPage({
     if (!rowCount) return;
     setLoading(true);
     try {
-      if (demo)
-        toast(
-          "success",
-          `Đã mô phỏng nhập ${rowCount} ${mode === "employees" ? "nhân viên" : "thành tích"}.`,
-        );
-      else if (mode === "employees") {
+      if (mode === "employees") {
         const result = await api.importEmployees(
           employeeRows,
           overwriteExisting,
@@ -2881,31 +3095,26 @@ function UsersPage({
   useEffect(load, []);
   const roleCards: Array<{
     role: Role;
-    description: string;
     tone: string;
     icon: LucideIcon;
   }> = [
     {
       role: "ADMIN",
-      description: "Toàn quyền cấu hình và quản lý",
       tone: "navy",
       icon: ShieldCheck,
     },
     {
       role: "HR",
-      description: "Thêm, sửa hồ sơ và thành tích",
       tone: "teal",
       icon: Users,
     },
     {
       role: "REVIEWER",
-      description: "Rà soát và xem đề xuất",
       tone: "violet",
       icon: FileCheck2,
     },
     {
       role: "VIEWER",
-      description: "Tra cứu dữ liệu được phép",
       tone: "gray",
       icon: UserRound,
     },
@@ -2931,60 +3140,84 @@ function UsersPage({
               <div className={`role-symbol ${card.tone}`}>
                 <Icon aria-hidden="true" />
               </div>
-              <div>
-                <strong>{roleLabel(card.role)}</strong>
-                <span>{card.description}</span>
-              </div>
-              <b>{counts[card.role]}</b>
-              <small>tài khoản</small>
+              <span>{roleLabel(card.role)}</span>
+              <strong>{counts[card.role]}</strong>
             </div>
           );
         })}
       </div>
-      <section className="panel">
+      <section className="panel user-panel">
         <PanelHeader
           title="Tài khoản hệ thống"
           subtitle={`${counts.active}/${counts.total} tài khoản đang hoạt động`}
         />
-        <div className="user-list">
-          {loading ? (
-            <div className="empty-inline">Đang tải tài khoản...</div>
-          ) : items.length ? (
-            items.map((item) => (
-              <div className="user-row" key={item.id}>
-                <div className="avatar">{initials(item.displayName)}</div>
-                <div>
-                  <strong>
-                    {item.displayName}
-                    {item.id === user.id ? " · Bạn" : ""}
-                  </strong>
-                  <span>
-                    {item.username} · Tạo ngày {formatDate(item.createdAt)}
-                  </span>
-                </div>
-                <span
-                  className={`role-pill ${item.role === "ADMIN" ? "admin" : ""}`}
-                >
-                  {roleLabel(item.role)}
-                </span>
-                <span
-                  className={item.active ? "status-active" : "status-inactive"}
-                >
-                  <i />
-                  {item.active ? "Đang hoạt động" : "Đã khóa"}
-                </span>
-                <button
-                  className="row-action"
-                  onClick={() => setEditing(item)}
-                  aria-label={`Sửa tài khoản ${item.displayName}`}
-                >
-                  <ChevronRight />
-                </button>
-              </div>
-            ))
-          ) : (
-            <div className="empty-inline">Chưa có tài khoản.</div>
-          )}
+        <div className="table-scroll user-table-scroll">
+          <table className="user-table">
+            <thead>
+              <tr>
+                <th>Người dùng</th>
+                <th>Vai trò</th>
+                <th>Trạng thái</th>
+                <th>Ngày tạo</th>
+                <th aria-label="Thao tác" />
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td className="user-table-empty" colSpan={5}>
+                    Đang tải tài khoản...
+                  </td>
+                </tr>
+              ) : items.length ? (
+                items.map((item) => (
+                  <tr key={item.id}>
+                    <td>
+                      <div className="person-cell user-person-cell">
+                        <div className="avatar">{initials(item.displayName)}</div>
+                        <div>
+                          <strong>{item.displayName}</strong>
+                          <span>
+                            @{item.username}
+                            {item.id === user.id ? " · Bạn" : ""}
+                          </span>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      <span className={`role-pill role-${item.role.toLowerCase()}`}>
+                        {roleLabel(item.role)}
+                      </span>
+                    </td>
+                    <td>
+                      <span
+                        className={item.active ? "status-active" : "status-inactive"}
+                      >
+                        <i />
+                        {item.active ? "Hoạt động" : "Đã khóa"}
+                      </span>
+                    </td>
+                    <td className="user-created-at">{formatDate(item.createdAt)}</td>
+                    <td className="user-action-cell">
+                      <button
+                        className="row-action"
+                        onClick={() => setEditing(item)}
+                        aria-label={`Sửa tài khoản ${item.displayName}`}
+                      >
+                        <ChevronRight />
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td className="user-table-empty" colSpan={5}>
+                    Chưa có tài khoản.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </section>
       {editing && (
@@ -3331,6 +3564,8 @@ function parseAchievementType(value: string): AchievementType {
   const key = normalize(value);
   if (achievementTypes.includes(value as AchievementType))
     return value as AchievementType;
+  if (key.includes("hoan thanh nhiem vu") || key.includes("danh gia nhiem vu"))
+    return "TASK_COMPLETION";
   if (key.includes("chien si") || key.includes("thi dua")) return "EMULATION";
   if (key.includes("bang khen")) return "CERTIFICATE";
   if (key.includes("huan chuong")) return "MEDAL";
@@ -3345,6 +3580,10 @@ function parseAchievementLevel(value: string): AchievementLevel {
     (level) => normalize(levelLabels[level]) === key,
   );
   if (found) return found;
+  if (key.includes("khong hoan thanh")) return "KHONG_HOAN_THANH";
+  if (key.includes("hoan thanh xuat sac")) return "HOAN_THANH_XUAT_SAC";
+  if (key.includes("hoan thanh tot")) return "HOAN_THANH_TOT";
+  if (key.includes("hoan thanh")) return "HOAN_THANH";
   if (key.includes("thu tuong")) return "THU_TUONG";
   if (key.includes("bo")) return "BO";
   if (key.includes("thanh pho")) return "THANH_PHO";
