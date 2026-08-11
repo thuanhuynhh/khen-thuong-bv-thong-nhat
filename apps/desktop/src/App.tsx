@@ -6,9 +6,10 @@ import {
   SlidersHorizontal, Sparkles, UploadCloud, UserRound, Users, X, Check, AlertCircle
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { achievementLevels, levelLabels, type AchievementLevel, type EmployeeInput, type SessionUser } from "@thongnhat/shared";
+import { achievementLevels, achievementTypes, levelLabels, typeLabels, type AchievementLevel, type AchievementType, type EmployeeInput, type SessionUser } from "@thongnhat/shared";
 import { api, ApiError, hasToken, setToken } from "./api";
 import { demoEmployees, recentAchievements } from "./demo";
+import hospitalLogo from "./assets/logo-bvtn.png";
 
 type Page = "dashboard" | "employees" | "candidates" | "import" | "users" | "settings";
 type Toast = { id: number; type: "success" | "error"; message: string };
@@ -44,7 +45,7 @@ export default function App() {
     api.me().then(({ user }) => setUser(user)).catch(() => setToken("")).finally(() => setLoadingSession(false));
   }, []);
 
-  if (loadingSession) return <div className="boot"><div className="brand-mark"><Award /></div><div className="boot-line" /></div>;
+  if (loadingSession) return <div className="boot"><div className="brand-mark"><HospitalLogo /></div><div className="boot-line" /></div>;
   if (!user && !demo) return <Login onLogin={setUser} onDemo={() => setDemo(true)} />;
 
   const currentUser = user ?? { id: "demo", username: "demo", displayName: "Nguyễn Thanh Vân", role: "ADMIN" as const };
@@ -53,7 +54,7 @@ export default function App() {
   return <div className={`app-shell ${collapsed ? "sidebar-collapsed" : ""}`}>
     <aside className="sidebar">
       <div className="brand">
-        <div className="brand-mark"><Award size={22} /></div>
+        <div className="brand-mark"><HospitalLogo /></div>
         {!collapsed && <div><strong>Thống Nhất</strong><span>Quản lý khen thưởng</span></div>}
       </div>
       <nav aria-label="Điều hướng chính">
@@ -82,7 +83,7 @@ export default function App() {
       <main id="main-content">
         {page === "dashboard" && <Dashboard demo={demo} onNavigate={setPage} />}
         {page === "employees" && <EmployeesPage demo={demo} toast={toast} />}
-        {page === "candidates" && <CandidatesPage demo={demo} />}
+        {page === "candidates" && <CandidatesPage demo={demo} toast={toast} />}
         {page === "import" && <ImportPage demo={demo} toast={toast} />}
         {page === "users" && <UsersPage demo={demo} user={currentUser} />}
         {page === "settings" && <SettingsPage />}
@@ -103,13 +104,13 @@ function Login({ onLogin, onDemo }: { onLogin: (u: SessionUser) => void; onDemo:
   };
   return <div className="login-screen">
     <section className="login-story">
-      <div className="hospital-seal"><Award size={28} /></div>
+      <div className="hospital-seal"><HospitalLogo /></div>
       <div className="story-copy"><span className="eyebrow">BỆNH VIỆN THỐNG NHẤT</span><h1>Ghi nhận xứng đáng.<br/>Lan tỏa cống hiến.</h1><p>Một không gian thống nhất để quản lý hồ sơ thành tích, sàng lọc tiêu chuẩn và đề xuất khen thưởng minh bạch.</p></div>
       <div className="story-stats"><div><strong>01</strong><span>Nguồn dữ liệu<br/>đồng nhất</span></div><div><strong>360°</strong><span>Hồ sơ thành tích<br/>toàn diện</span></div><div><strong>100%</strong><span>Truy vết<br/>thay đổi</span></div></div>
       <div className="story-orbit"><span/><span/><span/></div>
     </section>
     <section className="login-panel"><form onSubmit={submit}>
-      <div className="mobile-brand"><div className="brand-mark"><Award /></div><strong>Khen thưởng Thống Nhất</strong></div>
+      <div className="mobile-brand"><div className="brand-mark"><HospitalLogo /></div><strong>Khen thưởng Thống Nhất</strong></div>
       <span className="eyebrow teal">CỔNG NGHIỆP VỤ NỘI BỘ</span><h2>Chào mừng trở lại</h2><p className="muted">Đăng nhập bằng tài khoản được quản trị viên cấp.</p>
       {error && <div className="form-error" role="alert"><AlertCircle size={18}/>{error}</div>}
       <label>Tên đăng nhập<input autoFocus autoComplete="username" value={username} onChange={e => setUsername(e.target.value)} placeholder="Nhập tên đăng nhập" required /></label>
@@ -187,15 +188,34 @@ function EmployeeModal({ demo, onClose, onSaved }: { demo: boolean; onClose:()=>
   </div><div className="modal-actions"><button type="button" className="ghost-button" onClick={onClose}>Hủy</button><button className="primary-button" disabled={saving}>{saving&&<RefreshCw className="spin" size={17}/>}Lưu hồ sơ</button></div></form></div>;
 }
 
-function CandidatesPage({ demo }: { demo:boolean }) {
-  const [year,setYear]=useState(new Date().getFullYear()); const [items,setItems]=useState<Array<Record<string,unknown>>>([]);
+function CandidatesPage({ demo, toast }: { demo:boolean; toast:(t:Toast["type"],m:string)=>void }) {
+  const [year,setYear]=useState(new Date().getFullYear()); const [items,setItems]=useState<Array<Record<string,unknown>>>([]); const [ruleModal,setRuleModal]=useState(false);
   useEffect(()=>{if(!demo)api.candidates(year).then(x=>setItems(x.candidates)).catch(()=>undefined)},[demo,year]);
   const people: Array<Record<string, unknown>>=demo?demoEmployees.slice(0,3):items.map(x=>x.employee as Record<string,unknown>);
-  return <div className="page"><PageTitle eyebrow="SÀNG LỌC TIÊU CHUẨN" title="Đề xuất khen thưởng" description="Kết hợp nhiều điều kiện thành tích để tìm đúng hồ sơ đủ tiêu chuẩn." action={<button className="primary-button"><Plus size={18}/>Tạo bộ tiêu chuẩn</button>}/>
+  return <div className="page"><PageTitle eyebrow="SÀNG LỌC TIÊU CHUẨN" title="Đề xuất khen thưởng" description="Kết hợp nhiều điều kiện thành tích để tìm đúng hồ sơ đủ tiêu chuẩn." action={<button className="primary-button" onClick={()=>setRuleModal(true)}><Plus size={18}/>Tạo bộ tiêu chuẩn</button>}/>
     <div className="rule-hero"><div className="rule-icon"><Sparkles/></div><div><span className="eyebrow">BỘ TIÊU CHUẨN ĐANG ÁP DỤNG</span><h3>Huân chương Lao động hạng Ba</h3><p>Ứng viên cần đồng thời thỏa mãn tất cả điều kiện bên dưới, tính đến năm xét.</p></div><label>Năm xét<select value={year} onChange={e=>setYear(Number(e.target.value))}><option>2026</option><option>2025</option><option>2024</option></select></label></div>
     <div className="criteria-flow"><div className="criteria-card"><span>ĐIỀU KIỆN 01</span><Award/><div><strong>Bằng khen</strong><p>Cấp Thủ tướng Chính phủ</p></div><Check/></div><div className="criteria-and">VÀ</div><div className="criteria-card"><span>ĐIỀU KIỆN 02</span><FileCheck2/><div><strong>Đề tài khoa học</strong><p>Đề tài cấp Bộ</p></div><Check/></div><ChevronRight className="flow-arrow"/><div className="criteria-result"><Medal/><div><span>KẾT QUẢ ĐỀ XUẤT</span><strong>{people.length || 0} hồ sơ phù hợp</strong></div></div></div>
     <section className="panel candidates-panel"><PanelHeader title="Danh sách ứng viên" subtitle="Sắp xếp theo mức độ hoàn thiện hồ sơ" action={<button className="ghost-button"><Download size={16}/>Xuất danh sách</button>}/><div className="candidate-list">{people.map((p,i)=>{const name=String(p.fullName??p["full_name"]);return <div className="candidate" key={String(p.id)}><span className="rank">{String(i+1).padStart(2,"0")}</span><div className="mini-avatar">{initials(name)}</div><div className="candidate-name"><strong>{name}</strong><span>{String(p.unit)}</span></div><div className="evidence"><span><Check/>Bằng khen Thủ tướng</span><span><Check/>Đề tài cấp Bộ</span></div><div className="progress"><div><i style={{width:`${96-i*5}%`}}/></div><span>{96-i*5}% hoàn thiện</span></div><button className="secondary-button">Rà soát<ChevronRight size={16}/></button></div>})}</div></section>
+    {ruleModal&&<RewardRuleModal demo={demo} onClose={()=>setRuleModal(false)} onSaved={()=>{setRuleModal(false);toast("success","Đã tạo bộ tiêu chuẩn khen thưởng.")}}/>}
   </div>;
+}
+
+function RewardRuleModal({demo,onClose,onSaved}:{demo:boolean;onClose:()=>void;onSaved:()=>void}){
+  const [name,setName]=useState("Huân chương Lao động hạng Ba");
+  const [rewardType,setRewardType]=useState<AchievementType>("MEDAL");
+  const [rewardLevel,setRewardLevel]=useState<AchievementLevel>("HANG_BA");
+  const [priority,setPriority]=useState(100);
+  const [conditions,setConditions]=useState<Array<{type:AchievementType;level:AchievementLevel}>>([{type:"CERTIFICATE",level:"THU_TUONG"},{type:"RESEARCH",level:"BO"}]);
+  const [saving,setSaving]=useState(false); const [error,setError]=useState("");
+  const updateCondition=(index:number,key:"type"|"level",value:string)=>setConditions(current=>current.map((condition,i)=>i===index?{...condition,[key]:value}:condition));
+  const save=async(event:React.FormEvent)=>{event.preventDefault();setError("");if(!conditions.length){setError("Cần ít nhất một điều kiện.");return}setSaving(true);try{if(!demo)await api.createRewardRule({name,rewardType,rewardLevel,conditions:{all:conditions},priority});onSaved()}catch(err){setError(err instanceof Error?err.message:"Không thể tạo bộ tiêu chuẩn.")}finally{setSaving(false)}};
+  return <div className="modal-backdrop" onMouseDown={event=>event.target===event.currentTarget&&onClose()}><form className="modal rule-modal" onSubmit={save}><div className="modal-head"><div><span className="eyebrow teal">BỘ TIÊU CHUẨN MỚI</span><h2>Tạo tiêu chuẩn khen thưởng</h2><p>Các điều kiện bên dưới được áp dụng đồng thời khi sàng lọc.</p></div><button type="button" className="icon-button" onClick={onClose} aria-label="Đóng"><X/></button></div>{error&&<div className="form-error" role="alert"><AlertCircle size={18}/>{error}</div>}<div className="form-grid">
+    <label className="span-2">Tên bộ tiêu chuẩn *<input autoFocus required value={name} onChange={event=>setName(event.target.value)}/></label>
+    <label>Loại khen thưởng<select value={rewardType} onChange={event=>setRewardType(event.target.value as AchievementType)}>{achievementTypes.map(type=><option key={type} value={type}>{typeLabels[type]}</option>)}</select></label>
+    <label>Cấp / hạng khen thưởng<select value={rewardLevel} onChange={event=>setRewardLevel(event.target.value as AchievementLevel)}>{achievementLevels.map(level=><option key={level} value={level}>{levelLabels[level]}</option>)}</select></label>
+    <label>Độ ưu tiên<input type="number" min="0" max="9999" value={priority} onChange={event=>setPriority(Number(event.target.value))}/></label>
+    <fieldset className="condition-fieldset span-2"><legend>Điều kiện bắt buộc</legend>{conditions.map((condition,index)=><div className="condition-row" key={`${index}-${condition.type}-${condition.level}`}><span>{String(index+1).padStart(2,"0")}</span><select aria-label={`Loại thành tích điều kiện ${index+1}`} value={condition.type} onChange={event=>updateCondition(index,"type",event.target.value)}>{achievementTypes.map(type=><option key={type} value={type}>{typeLabels[type]}</option>)}</select><select aria-label={`Cấp thành tích điều kiện ${index+1}`} value={condition.level} onChange={event=>updateCondition(index,"level",event.target.value)}>{achievementLevels.map(level=><option key={level} value={level}>{levelLabels[level]}</option>)}</select><button type="button" className="icon-button" aria-label={`Xóa điều kiện ${index+1}`} disabled={conditions.length===1} onClick={()=>setConditions(current=>current.filter((_,i)=>i!==index))}><X size={17}/></button></div>)}<button type="button" className="text-button add-condition" onClick={()=>setConditions(current=>[...current,{type:"RESEARCH",level:"CO_SO"}])}><Plus size={16}/>Thêm điều kiện</button></fieldset>
+  </div><div className="modal-actions"><button type="button" className="ghost-button" onClick={onClose}>Hủy</button><button className="primary-button" disabled={saving}>{saving&&<RefreshCw className="spin" size={17}/>}Lưu bộ tiêu chuẩn</button></div></form></div>;
 }
 
 function ImportPage({ demo, toast }: { demo:boolean; toast:(t:Toast["type"],m:string)=>void }) {
@@ -215,6 +235,7 @@ function SettingsPage(){const[version,setVersion]=useState("0.1.0");const[status
 
 function PageTitle({eyebrow,title,description,action}:{eyebrow:string;title:string;description:string;action?:ReactNode}){return <div className="page-title"><div><span className="eyebrow teal">{eyebrow}</span><h1>{title}</h1><p>{description}</p></div>{action&&<div>{action}</div>}</div>}
 function PanelHeader({title,subtitle,action}:{title:string;subtitle:string;action?:ReactNode}){return <div className="panel-header"><div><h3>{title}</h3><p>{subtitle}</p></div>{action}</div>}
+function HospitalLogo(){return <img className="hospital-logo" src={hospitalLogo} width="148" height="148" alt="Logo Bệnh viện Thống Nhất"/>}
 function initials(name:string){return name.trim().split(/\s+/).slice(-2).map(x=>x[0]).join("").toUpperCase()}
 function roleLabel(role:string){return ({ADMIN:"Quản trị viên",HR:"Tổ chức cán bộ",REVIEWER:"Hội đồng xét duyệt",VIEWER:"Chỉ xem"} as Record<string,string>)[role]??role}
 function normalize(v:string){return v.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim()}

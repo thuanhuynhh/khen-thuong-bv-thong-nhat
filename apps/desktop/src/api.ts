@@ -34,6 +34,14 @@ export const api = {
   createEmployee: (data: EmployeeInput) => request<{ id: string }>("/api/employees", { method: "POST", body: JSON.stringify(data) }),
   importEmployees: (rows: EmployeeInput[]) => request<{ accepted: number; rejected: number; errors: unknown[] }>("/api/employees/import", { method: "POST", body: JSON.stringify({ rows }) }),
   candidates: (year: number) => request<{ candidates: Array<Record<string, unknown>> }>(`/api/reward-candidates?year=${year}`),
+  rewardRules: () => request<{ items: Array<Record<string, unknown>> }>("/api/reward-rules"),
+  createRewardRule: (data: {
+    name: string;
+    rewardType: string;
+    rewardLevel: string;
+    conditions: { all: Array<{ type: string; level: string }> };
+    priority: number;
+  }) => request<{ id: string }>("/api/reward-rules", { method: "POST", body: JSON.stringify(data) }),
   users: () => request<{ items: Array<Record<string, unknown>> }>("/api/users"),
   createUser: (data: Record<string, string>) => request("/api/users", { method: "POST", body: JSON.stringify(data) })
 };
