@@ -952,7 +952,7 @@ function EmployeesPage({
                   load(1);
                 }
               }}
-              placeholder="Tìm theo họ tên hoặc CCCD..."
+              placeholder="Tìm tên, CCCD, chức vụ, chức danh, trình độ..."
             />
             <kbd>Enter</kbd>
           </div>

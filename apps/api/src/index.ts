@@ -198,7 +198,11 @@ app.get("/api/employees", async (c) => {
   const parsed = filterSchema.safeParse(c.req.query());
   if (!parsed.success) return c.json({ error: "Bộ lọc không hợp lệ.", issues: parsed.error.issues }, 400);
   const f = parsed.data; const where: string[] = ["1=1"]; const params: unknown[] = [];
-  if (f.search) { where.push("(e.full_name LIKE ? OR e.citizen_id LIKE ?)"); params.push(`%${f.search}%`, `%${f.search}%`); }
+  if (f.search) {
+    where.push("(e.full_name LIKE ? OR e.citizen_id LIKE ? OR e.position LIKE ? OR e.professional_title LIKE ? OR e.education LIKE ?)");
+    const term = `%${f.search}%`;
+    params.push(term, term, term, term, term);
+  }
   if (f.unit) { where.push("e.unit = ?"); params.push(f.unit); }
   if (f.gender) { where.push("e.gender = ?"); params.push(f.gender); }
   if (f.education) { where.push("e.education LIKE ?"); params.push(`%${f.education}%`); }
@@ -212,22 +216,27 @@ app.get("/api/employees", async (c) => {
     where.push(`EXISTS (SELECT 1 FROM achievements a WHERE ${sub.join(" AND ")})`);
   }
   const clause = where.join(" AND "); const offset = (f.page - 1) * f.pageSize;
-  const sortColumns = {
-    fullName: "e.full_name COLLATE NOCASE",
-    citizenId: "e.citizen_id",
-    unit: "e.unit COLLATE NOCASE",
-    position: "(COALESCE(e.position,'') || ' ' || COALESCE(e.professional_title,'')) COLLATE NOCASE",
-    education: "e.education COLLATE NOCASE",
-    achievementCount: "achievement_count",
-    updatedAt: "e.updated_at",
-  } as const;
-  const orderBy = sortColumns[f.sortBy];
-  const direction = f.sortDirection === "desc" ? "DESC" : "ASC";
-  const [rows, count] = await Promise.all([
-    c.env.DB.prepare(`SELECT e.*, (SELECT COUNT(*) FROM achievements a WHERE a.employee_id=e.id) AS achievement_count FROM employees e WHERE ${clause} ORDER BY ${orderBy} ${direction}, e.full_name COLLATE NOCASE ASC LIMIT ? OFFSET ?`).bind(...params, f.pageSize, offset).all<Record<string, unknown>>(),
-    c.env.DB.prepare(`SELECT COUNT(*) AS total FROM employees e WHERE ${clause}`).bind(...params).first<{ total: number }>()
-  ]);
-  return c.json({ items: rows.results.map((r) => ({ ...employeeRow(r), achievementCount: r.achievement_count })), total: count?.total ?? 0, page: f.page, pageSize: f.pageSize });
+  const rows = await c.env.DB.prepare(`SELECT e.*, (SELECT COUNT(*) FROM achievements a WHERE a.employee_id=e.id) AS achievement_count FROM employees e WHERE ${clause}`).bind(...params).all<Record<string, unknown>>();
+  const collator = new Intl.Collator("vi", { sensitivity: "base", numeric: true });
+  const textValue = (row: Record<string, unknown>) => {
+    switch (f.sortBy) {
+      case "citizenId": return String(row.citizen_id ?? "");
+      case "unit": return String(row.unit ?? "");
+      case "position": return `${String(row.position ?? "")} ${String(row.professional_title ?? "")}`;
+      case "education": return String(row.education ?? "");
+      case "updatedAt": return String(row.updated_at ?? "");
+      default: return String(row.full_name ?? "");
+    }
+  };
+  rows.results.sort((left, right) => {
+    const comparison = f.sortBy === "achievementCount"
+      ? Number(left.achievement_count ?? 0) - Number(right.achievement_count ?? 0)
+      : collator.compare(textValue(left), textValue(right));
+    if (comparison) return f.sortDirection === "desc" ? -comparison : comparison;
+    return collator.compare(String(left.full_name ?? ""), String(right.full_name ?? ""));
+  });
+  const pageRows = rows.results.slice(offset, offset + f.pageSize);
+  return c.json({ items: pageRows.map((r) => ({ ...employeeRow(r), achievementCount: r.achievement_count })), total: rows.results.length, page: f.page, pageSize: f.pageSize });
 });
 
 app.get("/api/employees/options", async (c) => {
