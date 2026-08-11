@@ -24,6 +24,8 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   CircleHelp,
   Download,
   FileCheck2,
@@ -743,7 +745,8 @@ function EmployeesPage({
 }: {
   toast: (t: Toast["type"], m: string) => void;
 }) {
-  const pageSize = 25;
+  const [pageSize, setPageSize] = useState(25);
+  const requestPageSize = pageSize === 0 ? 100000 : pageSize;
   const [employees, setEmployees] = useState<Array<Record<string, unknown>>>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -777,9 +780,10 @@ function EmployeesPage({
   const load = (
     targetPage = page,
     filters = { search, unit, achievementType, level, year },
+    targetPageSize = requestPageSize,
   ) => {
     setLoading(true);
-    const q = buildQuery(targetPage, pageSize, filters);
+    const q = buildQuery(targetPage, targetPageSize, filters);
     api
       .employees(q.toString())
       .then((x) => {
@@ -803,9 +807,9 @@ function EmployeesPage({
     if (selectAllRef.current) selectAllRef.current.indeterminate = someSelected && !allSelected;
   }, [someSelected, allSelected]);
   const effectiveTotal = total;
-  const totalPages = Math.max(1, Math.ceil(effectiveTotal / pageSize));
-  const first = effectiveTotal ? (page - 1) * pageSize + 1 : 0;
-  const last = Math.min(page * pageSize, effectiveTotal);
+  const totalPages = Math.max(1, Math.ceil(effectiveTotal / requestPageSize));
+  const first = effectiveTotal ? (page - 1) * requestPageSize + 1 : 0;
+  const last = Math.min(page * requestPageSize, effectiveTotal);
   const go = (target: number) => {
     const next = Math.min(Math.max(target, 1), totalPages);
     load(next);
@@ -1134,33 +1138,81 @@ function EmployeesPage({
           </table>
         </div>
         <div className="pagination">
-          <span>
-            Hiển thị {first}–{last} trên{" "}
-            {effectiveTotal.toLocaleString("vi-VN")}
-          </span>
-          <div>
+          <div className="pagination-summary">
+            <select
+              value={pageSize === 0 ? "all" : String(pageSize)}
+              onChange={(event) => {
+                const nextPageSize =
+                  event.target.value === "all"
+                    ? 0
+                    : Number(event.target.value);
+                setPageSize(nextPageSize);
+                load(1, undefined, nextPageSize === 0 ? 100000 : nextPageSize);
+              }}
+              aria-label="Số nhân viên hiển thị mỗi trang"
+            >
+              <option value="25">25</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+              <option value="200">200</option>
+              <option value="all">Tất cả</option>
+            </select>
+            <span>
+              Hiển thị {first}–{last} trên{" "}
+              {effectiveTotal.toLocaleString("vi-VN")}
+            </span>
+          </div>
+          <div className="pagination-pages">
+            <button
+              disabled={page <= 1}
+              onClick={() => go(1)}
+              aria-label="Trang đầu"
+              title="Trang đầu"
+            >
+              <ChevronsLeft size={15} />
+            </button>
             <button
               disabled={page <= 1}
               onClick={() => go(page - 1)}
               aria-label="Trang trước"
             >
-              ‹
+              <ChevronLeft size={15} />
             </button>
-            {pageNumbers(totalPages, page).map((number) => (
-              <button
-                key={number}
-                className={number === page ? "active" : ""}
-                onClick={() => go(number)}
-              >
-                {number}
-              </button>
-            ))}
+            {pageNumbers(totalPages, page).map((item, index) =>
+              item === "ellipsis" ? (
+                <span
+                  className="pagination-ellipsis"
+                  key={`ellipsis-${index}`}
+                  aria-hidden="true"
+                >
+                  …
+                </span>
+              ) : (
+                <button
+                  key={item}
+                  className={item === page ? "active" : ""}
+                  onClick={() => go(item)}
+                  aria-label={`Trang ${item}`}
+                  aria-current={item === page ? "page" : undefined}
+                >
+                  {item}
+                </button>
+              ),
+            )}
             <button
               disabled={page >= totalPages}
               onClick={() => go(page + 1)}
               aria-label="Trang sau"
             >
-              ›
+              <ChevronRight size={15} />
+            </button>
+            <button
+              disabled={page >= totalPages}
+              onClick={() => go(totalPages)}
+              aria-label="Trang cuối"
+              title="Trang cuối"
+            >
+              <ChevronsRight size={15} />
             </button>
           </div>
         </div>
@@ -3908,10 +3960,12 @@ function parseVietnameseDate(value: string) {
     return null;
   return `${match[3]}-${match[2]}-${match[1]}`;
 }
-function pageNumbers(total: number, current: number) {
-  if (total <= 5) return Array.from({ length: total }, (_, index) => index + 1);
-  const start = Math.max(1, Math.min(current - 2, total - 4));
-  return Array.from({ length: 5 }, (_, index) => start + index);
+function pageNumbers(total: number, current: number): Array<number | "ellipsis"> {
+  if (total <= 7) return Array.from({ length: total }, (_, index) => index + 1);
+  if (current <= 4) return [1, 2, 3, 4, 5, "ellipsis", total];
+  if (current >= total - 3)
+    return [1, "ellipsis", total - 4, total - 3, total - 2, total - 1, total];
+  return [1, "ellipsis", current - 1, current, current + 1, "ellipsis", total];
 }
 function normalize(v: string) {
   return v

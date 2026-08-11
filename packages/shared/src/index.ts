@@ -88,7 +88,7 @@ export const filterSchema = z.object({
   achievementType: z.enum(achievementTypes).optional(),
   achievementLevel: z.enum(achievementLevels).optional(),
   page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(25)
+  pageSize: z.coerce.number().int().min(1).max(100000).default(25)
 }).superRefine((value, context) => {
   if (value.achievementLevel && (!value.achievementType || !isAchievementLevelValid(value.achievementType, value.achievementLevel))) {
     context.addIssue({ code: "custom", path: ["achievementLevel"], message: "Cấp / hạng không thuộc loại thành tích đã chọn." });
