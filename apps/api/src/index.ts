@@ -176,6 +176,32 @@ app.post("/api/auth/logout", async (c) => {
 });
 app.get("/api/me", (c) => c.json({ user: c.get("user") }));
 
+app.post("/api/me/password", async (c) => {
+  const body = await c.req.json<{ currentPassword?: string; newPassword?: string }>();
+  if (!body.currentPassword || !body.newPassword || body.newPassword.length < 10) {
+    return c.json({ error: "Mật khẩu mới phải có ít nhất 10 ký tự." }, 400);
+  }
+  if (body.currentPassword === body.newPassword) {
+    return c.json({ error: "Mật khẩu mới phải khác mật khẩu hiện tại." }, 400);
+  }
+  const userId = c.get("user").id;
+  const user = await c.env.DB.prepare("SELECT password_hash,password_salt,password_iterations FROM users WHERE id=?")
+    .bind(userId).first<Record<string, unknown>>();
+  if (!user || !(await verifyPassword(body.currentPassword, String(user.password_salt), Number(user.password_iterations), String(user.password_hash), c.env.AUTH_PEPPER))) {
+    return c.json({ error: "Mật khẩu hiện tại không đúng." }, 401);
+  }
+  const password = await hashPassword(body.newPassword, c.env.AUTH_PEPPER);
+  const token = c.req.header("Authorization")?.replace(/^Bearer\s+/i, "") ?? "";
+  const currentTokenHash = await sha256(token);
+  await c.env.DB.batch([
+    c.env.DB.prepare("UPDATE users SET password_hash=?,password_salt=?,password_iterations=?,updated_at=datetime('now') WHERE id=?")
+      .bind(password.hash, password.salt, password.iterations, userId),
+    c.env.DB.prepare("DELETE FROM sessions WHERE user_id=? AND token_hash<>?").bind(userId, currentTokenHash),
+  ]);
+  await audit(c.env, userId, "CHANGE_PASSWORD", "USER", userId, { otherSessionsRevoked: true });
+  return c.json({ ok: true });
+});
+
 app.get("/api/dashboard", async (c) => {
   const year = Number(c.req.query("year")) || new Date().getFullYear();
   const [employeeCount, achievementCount, unitCount, monthlyRows, recentRows, candidates] = await Promise.all([

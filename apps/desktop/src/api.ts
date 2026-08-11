@@ -31,6 +31,7 @@ export const api = {
   login: (username: string, password: string) => request<{ token: string; user: SessionUser }>("/api/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }),
   logout: () => request("/api/auth/logout", { method: "POST" }),
   me: () => request<{ user: SessionUser }>("/api/me"),
+  changePassword: (currentPassword: string, newPassword: string) => request<{ ok: true }>("/api/me/password", { method: "POST", body: JSON.stringify({ currentPassword, newPassword }) }),
   dashboard: (year: number) => request<Record<string, unknown>>(`/api/dashboard?year=${year}`),
   employees: (query = "") => request<{ items: Array<Record<string, unknown>>; total: number }>(`/api/employees?${query}`),
   employee: (id: string) => request<Record<string, unknown>>(`/api/employees/${id}`),

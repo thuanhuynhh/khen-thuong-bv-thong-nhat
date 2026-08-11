@@ -35,6 +35,7 @@ import {
   FileCheck2,
   FileSpreadsheet,
   LayoutDashboard,
+  KeyRound,
   LogOut,
   Medal,
   Menu,
@@ -132,6 +133,19 @@ const nav: Array<{
   },
 ];
 
+const pageAccess: Record<Page, readonly Role[]> = {
+  dashboard: roles,
+  employees: roles,
+  candidates: roles,
+  import: ["ADMIN", "HR"],
+  users: ["ADMIN"],
+  settings: roles,
+};
+
+function canAccessPage(role: Role, target: Page) {
+  return pageAccess[target].includes(role);
+}
+
 export default function App() {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [page, setPage] = useState<Page>("dashboard");
@@ -143,6 +157,8 @@ export default function App() {
     percent: 0,
   }));
   const [skipUpdate, setSkipUpdate] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [passwordFocusKey, setPasswordFocusKey] = useState(0);
 
   const toast = (type: Toast["type"], message: string) => {
     const id = Date.now();
@@ -161,6 +177,10 @@ export default function App() {
       .catch(() => setToken(""))
       .finally(() => setLoadingSession(false));
   }, []);
+  useEffect(() => {
+    if (user && !canAccessPage(user.role, page)) setPage("dashboard");
+  }, [user, page]);
+  useEffect(() => setUserMenuOpen(false), [page]);
 
   const checkUpdate = () => {
     if (!window.desktop) {
@@ -229,6 +249,10 @@ export default function App() {
   if (!user) return <Login onLogin={setUser} />;
 
   const currentUser = user;
+  const activePage = canAccessPage(currentUser.role, page) ? page : "dashboard";
+  const visibleNav = nav
+    .map((section) => ({ ...section, items: section.items.filter((item) => canAccessPage(currentUser.role, item.id)) }))
+    .filter((section) => section.items.length > 0);
   const logout = async () => {
     await api.logout().catch(() => undefined);
     setToken("");
@@ -250,19 +274,19 @@ export default function App() {
           )}
         </div>
         <nav aria-label="Điều hướng chính">
-          {nav.map((section) => (
+          {visibleNav.map((section) => (
             <div className="nav-section" key={section.group}>
               {!collapsed && <div className="nav-label">{section.group}</div>}
               {section.items.map((item) => (
                 <button
                   key={item.id}
-                  className={`nav-item ${page === item.id ? "active" : ""}`}
+                  className={`nav-item ${activePage === item.id ? "active" : ""}`}
                   onClick={() => setPage(item.id)}
                   title={collapsed ? item.label : undefined}
                 >
                   <item.icon className="nav-icon" aria-hidden="true" />
                   <span>{item.label}</span>
-                  {!collapsed && page === item.id && (
+                  {!collapsed && activePage === item.id && (
                     <ChevronRight className="nav-chevron" aria-hidden="true" />
                   )}
                 </button>
@@ -295,7 +319,7 @@ export default function App() {
             <span>Bệnh viện Thống Nhất</span>
             <ChevronRight size={15} />
             <strong>
-              {nav.flatMap((x) => x.items).find((x) => x.id === page)?.label}
+              {visibleNav.flatMap((x) => x.items).find((x) => x.id === activePage)?.label}
             </strong>
           </div>
           <div className="top-actions">
@@ -303,13 +327,37 @@ export default function App() {
               <Bell size={19} />
               <i />
             </button>
-            <div className="user-menu">
-              <div className="avatar">{initials(currentUser.displayName)}</div>
-              <div>
-                <strong>{currentUser.displayName}</strong>
-                <span>{roleLabel(currentUser.role)}</span>
-              </div>
-              <ChevronDown size={16} />
+            <div className="user-menu-wrap">
+              <button
+                type="button"
+                className={`user-menu ${userMenuOpen ? "open" : ""}`}
+                onClick={() => setUserMenuOpen((current) => !current)}
+                aria-expanded={userMenuOpen}
+                aria-haspopup="menu"
+              >
+                <div className="avatar">{initials(currentUser.displayName)}</div>
+                <div>
+                  <strong>{currentUser.displayName}</strong>
+                  <span>{roleLabel(currentUser.role)}</span>
+                </div>
+                <ChevronDown size={16} />
+              </button>
+              {userMenuOpen && (
+                <div className="user-dropdown" role="menu">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setPage("settings");
+                      setPasswordFocusKey((current) => current + 1);
+                      setUserMenuOpen(false);
+                    }}
+                  >
+                    <KeyRound size={16} />
+                    Đổi mật khẩu
+                  </button>
+                </div>
+              )}
             </div>
             <button
               className="icon-button"
@@ -321,18 +369,18 @@ export default function App() {
           </div>
         </header>
         <main id="main-content">
-          {page === "dashboard" && (
+          {activePage === "dashboard" && (
             <Dashboard
               displayName={currentUser.displayName}
               onNavigate={setPage}
             />
           )}
-          {page === "employees" && <EmployeesPage toast={toast} />}
-          {page === "candidates" && (
-            <CandidatesPage toast={toast} />
+          {activePage === "employees" && <EmployeesPage toast={toast} />}
+          {activePage === "candidates" && (
+            <CandidatesPage toast={toast} canManage={currentUser.role === "ADMIN"} />
           )}
-          {page === "import" && <ImportPage toast={toast} />}
-          {page === "users" && (
+          {activePage === "import" && <ImportPage toast={toast} />}
+          {activePage === "users" && (
             <UsersPage
               user={currentUser}
               toast={toast}
@@ -349,7 +397,7 @@ export default function App() {
               }
             />
           )}
-          {page === "settings" && <SettingsPage />}
+          {activePage === "settings" && <SettingsPage toast={toast} focusPasswordKey={passwordFocusKey} />}
         </main>
       </div>
       <div className="toast-stack" aria-live="polite">
@@ -2368,8 +2416,10 @@ function SearchableSelect({
 
 function CandidatesPage({
   toast,
+  canManage,
 }: {
   toast: (t: Toast["type"], m: string) => void;
+  canManage: boolean;
 }) {
   const [year, setYear] = useState(new Date().getFullYear());
   const [proposals, setProposals] = useState<Array<Record<string, unknown>>>(
@@ -2449,16 +2499,18 @@ function CandidatesPage({
                 ))}
               </select>
             </label>
-            <button
-              className="primary-button"
-              onClick={() => {
-                setEditingProposal(null);
-                setRuleModal(true);
-              }}
-            >
-              <Plus size={18} />
-              Tạo đề xuất
-            </button>
+            {canManage && (
+              <button
+                className="primary-button"
+                onClick={() => {
+                  setEditingProposal(null);
+                  setRuleModal(true);
+                }}
+              >
+                <Plus size={18} />
+                Tạo đề xuất
+              </button>
+            )}
           </div>
         }
       />
@@ -2529,18 +2581,20 @@ function CandidatesPage({
                       </td>
                       <td className="user-action-cell">
                         <div className="proposal-row-actions">
-                          <button
-                            className="row-action"
-                            disabled={refreshingProposal === String(proposal.id)}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              void refreshProposal(proposal);
-                            }}
-                            aria-label={`Cập nhật đề xuất ${proposal.name} theo dữ liệu hiện tại`}
-                            title="Cập nhật danh sách nhân viên"
-                          >
-                            <RefreshCw className={refreshingProposal === String(proposal.id) ? "spin" : undefined} size={17} />
-                          </button>
+                          {canManage && (
+                            <button
+                              className="row-action"
+                              disabled={refreshingProposal === String(proposal.id)}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void refreshProposal(proposal);
+                              }}
+                              aria-label={`Cập nhật đề xuất ${proposal.name} theo dữ liệu hiện tại`}
+                              title="Cập nhật danh sách nhân viên"
+                            >
+                              <RefreshCw className={refreshingProposal === String(proposal.id) ? "spin" : undefined} size={17} />
+                            </button>
+                          )}
                           <button
                             className="row-action"
                             onClick={(event) => {
@@ -2552,30 +2606,34 @@ function CandidatesPage({
                           >
                             <Eye size={17} />
                           </button>
-                          <button
-                            className="row-action"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              setEditingProposal(proposal);
-                              setRuleModal(true);
-                            }}
-                            aria-label={`Sửa đề xuất ${proposal.name}`}
-                            title="Sửa điều kiện đề xuất"
-                          >
-                            <Pencil size={17} />
-                          </button>
-                          <button
-                            className="row-action delete"
-                            disabled={deletingProposal === String(proposal.id)}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              void deleteProposal(proposal);
-                            }}
-                            aria-label={`Xóa đề xuất ${proposal.name}`}
-                            title="Xóa đề xuất"
-                          >
-                            {deletingProposal === String(proposal.id) ? <RefreshCw className="spin" size={17} /> : <Trash2 size={17} />}
-                          </button>
+                          {canManage && (
+                            <>
+                              <button
+                                className="row-action"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setEditingProposal(proposal);
+                                  setRuleModal(true);
+                                }}
+                                aria-label={`Sửa đề xuất ${proposal.name}`}
+                                title="Sửa điều kiện đề xuất"
+                              >
+                                <Pencil size={17} />
+                              </button>
+                              <button
+                                className="row-action delete"
+                                disabled={deletingProposal === String(proposal.id)}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  void deleteProposal(proposal);
+                                }}
+                                aria-label={`Xóa đề xuất ${proposal.name}`}
+                                title="Xóa đề xuất"
+                              >
+                                {deletingProposal === String(proposal.id) ? <RefreshCw className="spin" size={17} /> : <Trash2 size={17} />}
+                              </button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -3909,13 +3967,55 @@ function UserModal({
   );
 }
 
-function SettingsPage() {
+function SettingsPage({
+  toast,
+  focusPasswordKey,
+}: {
+  toast: (t: Toast["type"], m: string) => void;
+  focusPasswordKey: number;
+}) {
   const [version, setVersion] = useState("0.1.0");
   const [status, setStatus] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState("");
+  const currentPasswordRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     void window.desktop?.getVersion().then(setVersion);
     return window.desktop?.onUpdateStatus((x) => setStatus(x.status));
   }, []);
+  useEffect(() => {
+    if (focusPasswordKey > 0) {
+      currentPasswordRef.current?.focus();
+      currentPasswordRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [focusPasswordKey]);
+  const changePassword = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setPasswordError("");
+    if (newPassword.length < 10) {
+      setPasswordError("Mật khẩu mới phải có ít nhất 10 ký tự.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError("Xác nhận mật khẩu mới không khớp.");
+      return;
+    }
+    setChangingPassword(true);
+    try {
+      await api.changePassword(currentPassword, newPassword);
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      toast("success", "Đã đổi mật khẩu và đăng xuất các phiên khác.");
+    } catch (error) {
+      setPasswordError(error instanceof Error ? error.message : "Không thể đổi mật khẩu.");
+    } finally {
+      setChangingPassword(false);
+    }
+  };
   return (
     <div className="page">
       <PageTitle
@@ -3924,6 +4024,34 @@ function SettingsPage() {
         description="Quản lý kết nối, cập nhật phần mềm và chính sách dữ liệu."
       />
       <div className="settings-grid">
+        <section className="panel password-setting-card" id="change-password">
+          <div className="password-setting-head">
+            <div className="setting-icon teal"><KeyRound /></div>
+            <div>
+              <h3>Đổi mật khẩu</h3>
+              <p>Mật khẩu mới tối thiểu 10 ký tự. Các phiên đăng nhập khác sẽ bị đăng xuất.</p>
+            </div>
+          </div>
+          <form className="password-setting-form" onSubmit={changePassword}>
+            {passwordError && <div className="form-error" role="alert"><AlertCircle size={17} />{passwordError}</div>}
+            <label>
+              Mật khẩu hiện tại
+              <input ref={currentPasswordRef} required type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} />
+            </label>
+            <label>
+              Mật khẩu mới
+              <input required minLength={10} type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
+            </label>
+            <label>
+              Xác nhận mật khẩu mới
+              <input required minLength={10} type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
+            </label>
+            <button className="primary-button" disabled={changingPassword}>
+              {changingPassword ? <RefreshCw className="spin" size={17} /> : <KeyRound size={17} />}
+              Đổi mật khẩu
+            </button>
+          </form>
+        </section>
         <section className="panel setting-card">
           <div className="setting-icon">
             <RefreshCw />
