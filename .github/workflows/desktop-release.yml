@@ -70,6 +70,8 @@ jobs:
         shell: bash
         run: |
           version=$(node -p "require('./apps/desktop/package.json').version")
-          gh release create "${{ github.ref_name }}" release-assets/* --title "$version" --generate-notes --verify-tag
+          mapfile -d '' assets < <(find release-assets -type f -print0)
+          test "${#assets[@]}" -gt 0
+          gh release create "${{ github.ref_name }}" "${assets[@]}" --title "$version" --generate-notes --verify-tag
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
