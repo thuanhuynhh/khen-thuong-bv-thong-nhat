@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 import { cors } from "hono/cors";
-import { employeeSchema, achievementSchema, filterSchema, roles, type Role } from "@thongnhat/shared";
+import { employeeSchema, achievementSchema, filterSchema, isAchievementLevelValid, roles, type Role } from "@thongnhat/shared";
 import { hashPassword, randomToken, sha256, verifyPassword } from "./crypto";
 import type { Bindings, Variables } from "./types";
 
@@ -87,6 +87,14 @@ function normalizeRewardConditions(value: unknown): RewardConditions {
     };
   }).filter((group) => group.conditions.length);
   return { operator: raw.operator === "OR" ? "OR" : "AND", groups };
+}
+
+function areRewardConditionsValid(conditions: RewardConditions): boolean {
+  return conditions.groups.every((group) =>
+    group.conditions.every((condition) =>
+      isAchievementLevelValid(condition.type, condition.level)
+    )
+  );
 }
 
 async function getRewardCandidates(env: Bindings, year: number) {
@@ -376,7 +384,14 @@ app.get("/api/reward-rules", async (c) => {
 app.post("/api/reward-rules", requireRole(["ADMIN"]), async (c) => {
   const body = await c.req.json<{ name?: string; rewardType?: string; rewardLevel?: string; conditions?: unknown; priority?: number }>();
   const conditions = normalizeRewardConditions(body.conditions);
-  if (!body.name?.trim() || !body.rewardType || !body.rewardLevel || !conditions.groups.length) {
+  if (
+    !body.name?.trim() ||
+    !body.rewardType ||
+    !body.rewardLevel ||
+    !conditions.groups.length ||
+    !isAchievementLevelValid(body.rewardType, body.rewardLevel) ||
+    !areRewardConditionsValid(conditions)
+  ) {
     return c.json({ error: "Bộ tiêu chuẩn cần có tên, kết quả và ít nhất một điều kiện hợp lệ." }, 400);
   }
   const id = crypto.randomUUID();
@@ -389,7 +404,14 @@ app.post("/api/reward-rules", requireRole(["ADMIN"]), async (c) => {
 app.put("/api/reward-rules/:id", requireRole(["ADMIN"]), async (c) => {
   const body = await c.req.json<{ name?: string; rewardType?: string; rewardLevel?: string; conditions?: unknown; priority?: number; active?: boolean }>();
   const conditions = normalizeRewardConditions(body.conditions);
-  if (!body.name?.trim() || !body.rewardType || !body.rewardLevel || !conditions.groups.length) return c.json({ error: "Bộ tiêu chuẩn không hợp lệ." }, 400);
+  if (
+    !body.name?.trim() ||
+    !body.rewardType ||
+    !body.rewardLevel ||
+    !conditions.groups.length ||
+    !isAchievementLevelValid(body.rewardType, body.rewardLevel) ||
+    !areRewardConditionsValid(conditions)
+  ) return c.json({ error: "Bộ tiêu chuẩn không hợp lệ." }, 400);
   const result = await c.env.DB.prepare("UPDATE reward_rules SET name=?,reward_type=?,reward_level=?,conditions_json=?,priority=?,active=?,updated_at=datetime('now') WHERE id=?")
     .bind(clean(body.name), body.rewardType, body.rewardLevel, JSON.stringify(conditions), Math.trunc(body.priority ?? 0), body.active === false ? 0 : 1, c.req.param("id")).run();
   if (!result.meta.changes) return c.json({ error: "Không tìm thấy bộ tiêu chuẩn." }, 404);

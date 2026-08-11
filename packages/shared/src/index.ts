@@ -11,6 +11,23 @@ export type Role = typeof roles[number];
 export type AchievementType = typeof achievementTypes[number];
 export type AchievementLevel = typeof achievementLevels[number];
 
+export const achievementLevelsByType = {
+  RESEARCH: ["CO_SO", "TRUONG_DAI_HOC", "THANH_PHO", "BO", "NHA_NUOC", "KHAC"],
+  EMULATION: ["CO_SO", "THANH_PHO", "BO", "TOAN_QUOC", "KHAC"],
+  CERTIFICATE: ["THANH_PHO", "BO", "THU_TUONG", "KHAC"],
+  MEDAL: ["HANG_BA", "HANG_HAI", "HANG_NHAT"],
+  OTHER: ["KHAC"]
+} as const satisfies Record<AchievementType, readonly [AchievementLevel, ...AchievementLevel[]]>;
+
+export function levelsForAchievementType(type: AchievementType): readonly [AchievementLevel, ...AchievementLevel[]] {
+  return achievementLevelsByType[type] as readonly [AchievementLevel, ...AchievementLevel[]];
+}
+
+export function isAchievementLevelValid(type: string, level: string): boolean {
+  if (!achievementTypes.includes(type as AchievementType)) return false;
+  return (levelsForAchievementType(type as AchievementType) as readonly string[]).includes(level);
+}
+
 export const employeeSchema = z.object({
   citizenId: z.string().trim().regex(/^\d{9,12}$/, "CCCD phải gồm 9–12 chữ số"),
   fullName: z.string().trim().min(2).max(120),
@@ -34,6 +51,14 @@ export const achievementSchema = z.object({
   decisionNumber: z.string().trim().max(120).default(""),
   role: z.string().trim().max(160).default(""),
   notes: z.string().trim().max(2000).default("")
+}).superRefine((value, context) => {
+  if (!isAchievementLevelValid(value.type, value.level)) {
+    context.addIssue({
+      code: "custom",
+      path: ["level"],
+      message: "Cấp / hạng không phù hợp với loại thành tích"
+    });
+  }
 });
 
 export const filterSchema = z.object({

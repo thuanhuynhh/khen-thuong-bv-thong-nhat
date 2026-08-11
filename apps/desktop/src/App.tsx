@@ -33,6 +33,7 @@ import {
   achievementLevels,
   achievementTypes,
   levelLabels,
+  levelsForAchievementType,
   roles,
   typeLabels,
   type AchievementInput,
@@ -1609,7 +1610,7 @@ function AchievementModal({
   const [form, setForm] = useState<AchievementInput>({
     employeeId,
     type: initialType,
-    level: "CO_SO",
+    level: levelsForAchievementType(initialType)[0],
     title: "",
     acceptedDate: "",
     year: new Date().getFullYear(),
@@ -1684,7 +1685,14 @@ function AchievementModal({
             Loại thành tích
             <select
               value={form.type}
-              onChange={(e) => update("type", e.target.value)}
+              onChange={(e) => {
+                const type = e.target.value as AchievementType;
+                setForm((current) => ({
+                  ...current,
+                  type,
+                  level: levelsForAchievementType(type)[0],
+                }));
+              }}
             >
               {achievementTypes.map((type) => (
                 <option key={type} value={type}>
@@ -1699,7 +1707,7 @@ function AchievementModal({
               value={form.level}
               onChange={(e) => update("level", e.target.value)}
             >
-              {achievementLevels.map((level) => (
+              {levelsForAchievementType(form.type).map((level) => (
                 <option key={level} value={level}>
                   {levelLabels[level]}
                 </option>
@@ -1922,35 +1930,6 @@ function CandidatesPage({
       .finally(() => setLoading(false));
   };
   useEffect(load, [demo, year]);
-  const demoConditions = {
-    operator: "AND",
-    groups: [
-      {
-        operator: "AND",
-        conditions: [
-          {
-            type: "CERTIFICATE",
-            level: "THU_TUONG",
-            quantity: 1,
-            withinYears: 1,
-          },
-          { type: "RESEARCH", level: "BO", quantity: 1, withinYears: 0 },
-        ],
-      },
-    ],
-  };
-  const shown = demo
-    ? [
-        {
-          id: "demo-rule",
-          name: "Huân chương Lao động hạng Ba",
-          rewardType: "MEDAL",
-          rewardLevel: "HANG_BA",
-          conditions: demoConditions,
-          employees: demoEmployees.slice(0, 3),
-        },
-      ]
-    : proposals;
   const years = Array.from(
     { length: 8 },
     (_, index) => new Date().getFullYear() - index,
@@ -1958,9 +1937,9 @@ function CandidatesPage({
   return (
     <div className="page">
       <PageTitle
-        eyebrow="SÀNG LỌC TIÊU CHUẨN"
+        eyebrow="DANH SÁCH ĐỀ XUẤT"
         title="Đề xuất khen thưởng"
-        description="Mỗi đề xuất có bộ điều kiện và danh sách nhân viên đạt riêng."
+        description="Theo dõi các đề xuất đã tạo; nội dung khen thưởng được chọn khi tạo mới."
         action={
           <div className="proposal-page-actions">
             <label>
@@ -1984,21 +1963,75 @@ function CandidatesPage({
           </div>
         }
       />
-      <div className="proposal-list">
-        {loading ? (
-          <div className="panel empty-inline">Đang đối chiếu tiêu chuẩn...</div>
-        ) : shown.length ? (
-          shown.map((proposal) => (
-            <ProposalCard key={String(proposal.id)} proposal={proposal} />
-          ))
-        ) : (
-          <div className="panel proposal-empty">
-            <Medal />
-            <strong>Chưa có đề xuất</strong>
-            <span>Tạo đề xuất đầu tiên để bắt đầu sàng lọc.</span>
-          </div>
-        )}
-      </div>
+      <section className="panel proposal-table-panel">
+        <div className="table-summary">
+          <span>
+            Có <strong>{proposals.length}</strong> đề xuất trong năm {year}
+          </span>
+        </div>
+        <div className="table-scroll">
+          <table className="proposal-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Tên đề xuất</th>
+                <th>Loại khen thưởng</th>
+                <th>Cấp / hạng</th>
+                <th>Nhân viên đạt</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan={5} className="proposal-table-empty">
+                    Đang tải danh sách đề xuất...
+                  </td>
+                </tr>
+              ) : proposals.length ? (
+                proposals.map((proposal, index) => {
+                  const employees =
+                    (proposal.employees as
+                      | Array<Record<string, unknown>>
+                      | undefined) ?? [];
+                  return (
+                    <tr key={String(proposal.id)}>
+                      <td className="mono">
+                        {String(index + 1).padStart(2, "0")}
+                      </td>
+                      <td>
+                        <strong className="table-main">
+                          {String(proposal.name)}
+                        </strong>
+                      </td>
+                      <td>
+                        {typeLabels[
+                          proposal.rewardType as AchievementType
+                        ] ?? String(proposal.rewardType)}
+                      </td>
+                      <td>
+                        {levelLabels[
+                          proposal.rewardLevel as AchievementLevel
+                        ] ?? String(proposal.rewardLevel)}
+                      </td>
+                      <td>
+                        <span className="count-pill">
+                          {employees.length} nhân viên
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })
+              ) : (
+                <tr>
+                  <td colSpan={5} className="proposal-table-empty">
+                    Chưa có đề xuất. Chọn “Tạo đề xuất” để thêm mới.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
       {ruleModal && (
         <RewardRuleModal
           demo={demo}
@@ -2014,124 +2047,6 @@ function CandidatesPage({
   );
 }
 
-function ProposalCard({ proposal }: { proposal: Record<string, unknown> }) {
-  const employees =
-    (proposal.employees as Array<Record<string, unknown>> | undefined) ?? [];
-  const conditions = proposal.conditions as
-    | {
-        operator?: "AND" | "OR";
-        groups?: Array<{
-          operator?: "AND" | "OR";
-          conditions?: Array<{
-            type: string;
-            level: string;
-            quantity: number;
-            withinYears: number;
-          }>;
-        }>;
-      }
-    | undefined;
-  return (
-    <section className="panel proposal-card">
-      <div className="proposal-head">
-        <div className="proposal-symbol">
-          <Medal />
-        </div>
-        <div>
-          <span className="eyebrow">ĐỀ XUẤT KHEN THƯỞNG</span>
-          <h2>{String(proposal.name)}</h2>
-          <p>
-            {typeLabels[proposal.rewardType as AchievementType] ??
-              String(proposal.rewardType)}{" "}
-            ·{" "}
-            {levelLabels[proposal.rewardLevel as AchievementLevel] ??
-              String(proposal.rewardLevel)}
-          </p>
-        </div>
-        <div className="proposal-count">
-          <strong>{employees.length}</strong>
-          <span>nhân viên đạt</span>
-        </div>
-      </div>
-      <div className="condition-groups">
-        {(conditions?.groups ?? []).map((group, groupIndex) => (
-          <div className="condition-group-summary" key={groupIndex}>
-            {groupIndex > 0 && (
-              <span className="logic-badge root">
-                {conditions?.operator === "OR" ? "HOẶC" : "VÀ"}
-              </span>
-            )}
-            <div className="group-box">
-              <b>
-                NHÓM {groupIndex + 1} ·{" "}
-                {group.operator === "OR" ? "HOẶC" : "VÀ"}
-              </b>
-              <div>
-                {(group.conditions ?? []).map((condition, index) => (
-                  <span className="condition-chip" key={index}>
-                    {typeLabels[condition.type as AchievementType] ??
-                      condition.type}{" "}
-                    ·{" "}
-                    {levelLabels[condition.level as AchievementLevel] ??
-                      condition.level}
-                    <small>
-                      SL ≥ {condition.quantity || 1} ·{" "}
-                      {condition.withinYears
-                        ? `${condition.withinYears} năm gần nhất`
-                        : "Không giới hạn năm"}
-                    </small>
-                  </span>
-                ))}
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-      <div className="proposal-candidates-head">
-        <div>
-          <strong>Nhân viên đạt tiêu chuẩn</strong>
-          <span>
-            {employees.length
-              ? `Danh sách đối chiếu tự động gồm ${employees.length} hồ sơ.`
-              : "Chưa có nhân viên thỏa điều kiện trong năm xét."}
-          </span>
-        </div>
-        <button className="ghost-button">
-          <Download size={16} />
-          Xuất danh sách
-        </button>
-      </div>
-      {employees.length ? (
-        <div className="candidate-list">
-          {employees.map((person, index) => {
-            const name = String(person.fullName ?? person.full_name);
-            return (
-              <div className="proposal-person" key={String(person.id)}>
-                <span className="rank">
-                  {String(index + 1).padStart(2, "0")}
-                </span>
-                <div className="mini-avatar">{initials(name)}</div>
-                <div>
-                  <strong>{name}</strong>
-                  <span>{String(person.unit ?? "—")}</span>
-                </div>
-                <code>
-                  {String(person.citizenId ?? person.citizen_id ?? "")}
-                </code>
-                <button className="row-action" aria-label={`Rà soát ${name}`}>
-                  <ChevronRight />
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      ) : (
-        <div className="proposal-no-results">Không có hồ sơ phù hợp.</div>
-      )}
-    </section>
-  );
-}
-
 function RewardRuleModal({
   demo,
   onClose,
@@ -2141,20 +2056,20 @@ function RewardRuleModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [name, setName] = useState("Huân chương Lao động hạng Ba");
-  const [rewardType, setRewardType] = useState<AchievementType>("MEDAL");
-  const [rewardLevel, setRewardLevel] = useState<AchievementLevel>("HANG_BA");
+  const [name, setName] = useState("");
+  const [rewardType, setRewardType] = useState<AchievementType | "">("");
+  const [rewardLevel, setRewardLevel] = useState<AchievementLevel | "">("");
   const [priority, setPriority] = useState(100);
   type Condition = {
-    type: AchievementType;
-    level: AchievementLevel;
+    type: AchievementType | "";
+    level: AchievementLevel | "";
     quantity: number;
     withinYears: number;
   };
   type Group = { operator: "AND" | "OR"; conditions: Condition[] };
   const makeCondition = (): Condition => ({
-    type: "RESEARCH",
-    level: "CO_SO",
+    type: "",
+    level: "",
     quantity: 1,
     withinYears: 0,
   });
@@ -2162,15 +2077,7 @@ function RewardRuleModal({
   const [groups, setGroups] = useState<Group[]>([
     {
       operator: "AND",
-      conditions: [
-        {
-          type: "CERTIFICATE",
-          level: "THU_TUONG",
-          quantity: 1,
-          withinYears: 1,
-        },
-        { type: "RESEARCH", level: "BO", quantity: 1, withinYears: 0 },
-      ],
+      conditions: [makeCondition()],
     },
   ]);
   const [saving, setSaving] = useState(false);
@@ -2187,7 +2094,15 @@ function RewardRuleModal({
           ? {
               ...group,
               conditions: group.conditions.map((condition, i) =>
-                i === index ? { ...condition, [key]: value } : condition,
+                i === index
+                  ? key === "type"
+                    ? {
+                        ...condition,
+                        type: value as AchievementType,
+                        level: "",
+                      }
+                    : { ...condition, [key]: value }
+                  : condition,
               ),
             }
           : group,
@@ -2196,8 +2111,19 @@ function RewardRuleModal({
   const save = async (event: React.FormEvent) => {
     event.preventDefault();
     setError("");
-    if (!groups.length || groups.some((group) => !group.conditions.length)) {
-      setError("Mỗi nhóm cần ít nhất một điều kiện.");
+    if (!rewardType || !rewardLevel) {
+      setError("Chọn loại và cấp / hạng khen thưởng.");
+      return;
+    }
+    if (
+      !groups.length ||
+      groups.some(
+        (group) =>
+          !group.conditions.length ||
+          group.conditions.some((condition) => !condition.type || !condition.level),
+      )
+    ) {
+      setError("Chọn đầy đủ loại và cấp / hạng cho từng điều kiện.");
       return;
     }
     setSaving(true);
@@ -2228,7 +2154,7 @@ function RewardRuleModal({
             <span className="eyebrow teal">ĐỀ XUẤT MỚI</span>
             <h2>Tạo đề xuất khen thưởng</h2>
             <p>
-              Tạo nhóm điều kiện, chọn VÀ hoặc HOẶC, số lượng và giới hạn năm.
+              Chọn nội dung khen thưởng, sau đó thiết lập điều kiện xét.
             </p>
           </div>
           <button
@@ -2259,11 +2185,16 @@ function RewardRuleModal({
           <label>
             Loại khen thưởng
             <select
+              required
               value={rewardType}
-              onChange={(event) =>
-                setRewardType(event.target.value as AchievementType)
-              }
+              onChange={(event) => {
+                setRewardType(event.target.value as AchievementType);
+                setRewardLevel("");
+              }}
             >
+              <option value="" disabled>
+                Chọn loại khen thưởng
+              </option>
               {achievementTypes.map((type) => (
                 <option key={type} value={type}>
                   {typeLabels[type]}
@@ -2274,12 +2205,17 @@ function RewardRuleModal({
           <label>
             Cấp / hạng khen thưởng
             <select
+              required
+              disabled={!rewardType}
               value={rewardLevel}
               onChange={(event) =>
                 setRewardLevel(event.target.value as AchievementLevel)
               }
             >
-              {achievementLevels.map((level) => (
+              <option value="" disabled>
+                Chọn cấp / hạng
+              </option>
+              {(rewardType ? levelsForAchievementType(rewardType) : []).map((level) => (
                 <option key={level} value={level}>
                   {levelLabels[level]}
                 </option>
@@ -2355,6 +2291,7 @@ function RewardRuleModal({
                     <label>
                       Loại
                       <select
+                        required
                         aria-label={`Loại thành tích nhóm ${groupIndex + 1} điều kiện ${index + 1}`}
                         value={condition.type}
                         onChange={(event) =>
@@ -2366,6 +2303,9 @@ function RewardRuleModal({
                           )
                         }
                       >
+                        <option value="" disabled>
+                          Chọn loại thành tích
+                        </option>
                         {achievementTypes.map((type) => (
                           <option key={type} value={type}>
                             {typeLabels[type]}
@@ -2376,6 +2316,8 @@ function RewardRuleModal({
                     <label>
                       Cấp / hạng
                       <select
+                        required
+                        disabled={!condition.type}
                         value={condition.level}
                         onChange={(event) =>
                           updateCondition(
@@ -2386,7 +2328,13 @@ function RewardRuleModal({
                           )
                         }
                       >
-                        {achievementLevels.map((level) => (
+                        <option value="" disabled>
+                          Chọn cấp / hạng
+                        </option>
+                        {(condition.type
+                          ? levelsForAchievementType(condition.type)
+                          : []
+                        ).map((level) => (
                           <option key={level} value={level}>
                             {levelLabels[level]}
                           </option>
