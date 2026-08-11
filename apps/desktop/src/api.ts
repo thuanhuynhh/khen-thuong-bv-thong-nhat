@@ -62,6 +62,7 @@ export const api = {
     priority: number;
   }) => request<{ id: string }>("/api/reward-rules", { method: "POST", body: JSON.stringify(data) }),
   refreshRewardProposal: (id: string) => request<{ ok: true; employees: number }>(`/api/reward-rules/${id}/refresh`, { method: "POST" }),
+  deleteRewardProposal: (id: string) => request<{ ok: true }>(`/api/reward-rules/${id}`, { method: "DELETE" }),
   users: () => request<{ items: UserRecord[]; counts: UserCounts }>("/api/users"),
   createUser: (data: { username: string; displayName: string; role: Role; password: string }) => request<{ id: string }>("/api/users", { method: "POST", body: JSON.stringify(data) }),
   updateUser: (id: string, data: { displayName: string; role: Role; active: boolean; password?: string }) => request<{ ok: true }>(`/api/users/${id}`, { method: "PUT", body: JSON.stringify(data) })

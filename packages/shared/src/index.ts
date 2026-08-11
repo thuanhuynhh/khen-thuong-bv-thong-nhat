@@ -87,6 +87,8 @@ export const filterSchema = z.object({
   toYear: z.coerce.number().int().min(1900).max(2200).optional(),
   achievementType: z.enum(achievementTypes).optional(),
   achievementLevel: z.enum(achievementLevels).optional(),
+  sortBy: z.enum(["fullName", "citizenId", "unit", "position", "education", "achievementCount", "updatedAt"]).default("fullName"),
+  sortDirection: z.enum(["asc", "desc"]).default("asc"),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100000).default(25)
 }).superRefine((value, context) => {

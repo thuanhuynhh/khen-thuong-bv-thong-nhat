@@ -212,8 +212,19 @@ app.get("/api/employees", async (c) => {
     where.push(`EXISTS (SELECT 1 FROM achievements a WHERE ${sub.join(" AND ")})`);
   }
   const clause = where.join(" AND "); const offset = (f.page - 1) * f.pageSize;
+  const sortColumns = {
+    fullName: "e.full_name COLLATE NOCASE",
+    citizenId: "e.citizen_id",
+    unit: "e.unit COLLATE NOCASE",
+    position: "(COALESCE(e.position,'') || ' ' || COALESCE(e.professional_title,'')) COLLATE NOCASE",
+    education: "e.education COLLATE NOCASE",
+    achievementCount: "achievement_count",
+    updatedAt: "e.updated_at",
+  } as const;
+  const orderBy = sortColumns[f.sortBy];
+  const direction = f.sortDirection === "desc" ? "DESC" : "ASC";
   const [rows, count] = await Promise.all([
-    c.env.DB.prepare(`SELECT e.*, (SELECT COUNT(*) FROM achievements a WHERE a.employee_id=e.id) AS achievement_count FROM employees e WHERE ${clause} ORDER BY e.full_name LIMIT ? OFFSET ?`).bind(...params, f.pageSize, offset).all<Record<string, unknown>>(),
+    c.env.DB.prepare(`SELECT e.*, (SELECT COUNT(*) FROM achievements a WHERE a.employee_id=e.id) AS achievement_count FROM employees e WHERE ${clause} ORDER BY ${orderBy} ${direction}, e.full_name COLLATE NOCASE ASC LIMIT ? OFFSET ?`).bind(...params, f.pageSize, offset).all<Record<string, unknown>>(),
     c.env.DB.prepare(`SELECT COUNT(*) AS total FROM employees e WHERE ${clause}`).bind(...params).first<{ total: number }>()
   ]);
   return c.json({ items: rows.results.map((r) => ({ ...employeeRow(r), achievementCount: r.achievement_count })), total: count?.total ?? 0, page: f.page, pageSize: f.pageSize });

@@ -19,6 +19,9 @@ import { readSheet } from "read-excel-file/browser";
 import writeXlsxFile, { type SheetData } from "write-excel-file/browser";
 import {
   Award,
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
   Bell,
   CalendarDays,
   ChevronDown,
@@ -94,6 +97,9 @@ type UpdateState = {
   version?: string;
   message?: string;
 };
+
+type EmployeeSortKey = "fullName" | "citizenId" | "unit" | "position" | "education" | "achievementCount" | "updatedAt";
+type SortDirection = "asc" | "desc";
 
 const nav: Array<{
   group: string;
@@ -740,6 +746,36 @@ function Dashboard({
   );
 }
 
+function EmployeeSortableHeader({
+  label,
+  sortKey,
+  activeKey,
+  direction,
+  onSort,
+  className = "",
+  title,
+}: {
+  label: string;
+  sortKey: EmployeeSortKey;
+  activeKey: EmployeeSortKey;
+  direction: SortDirection;
+  onSort: (key: EmployeeSortKey) => void;
+  className?: string;
+  title?: string;
+}) {
+  const active = activeKey === sortKey;
+  const Icon = active ? (direction === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown;
+  const nextDirection = active && direction === "asc" ? "giảm dần" : "tăng dần";
+  return (
+    <th className={`sortable-column ${active ? "active" : ""} ${className}`.trim()}>
+      <button type="button" onClick={() => onSort(sortKey)} title={title} aria-label={`Sắp xếp ${label} ${nextDirection}`}>
+        <span>{label}</span>
+        <Icon size={14} aria-hidden="true" />
+      </button>
+    </th>
+  );
+}
+
 function EmployeesPage({
   toast,
 }: {
@@ -764,14 +800,19 @@ function EmployeesPage({
   const [achievementType, setAchievementType] = useState("");
   const [level, setLevel] = useState("");
   const [year, setYear] = useState("");
+  const [sortBy, setSortBy] = useState<EmployeeSortKey>("fullName");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const buildQuery = (
     targetPage: number,
     targetPageSize: number,
     filters = { search, unit, achievementType, level, year },
+    sort = { sortBy, sortDirection },
   ) => new URLSearchParams({
     search: filters.search,
     page: String(targetPage),
     pageSize: String(targetPageSize),
+    sortBy: sort.sortBy,
+    sortDirection: sort.sortDirection,
     ...(filters.unit && { unit: filters.unit }),
     ...(filters.achievementType && { achievementType: filters.achievementType }),
     ...(filters.level && { achievementLevel: filters.level }),
@@ -781,9 +822,10 @@ function EmployeesPage({
     targetPage = page,
     filters = { search, unit, achievementType, level, year },
     targetPageSize = requestPageSize,
+    sort = { sortBy, sortDirection },
   ) => {
     setLoading(true);
-    const q = buildQuery(targetPage, targetPageSize, filters);
+    const q = buildQuery(targetPage, targetPageSize, filters, sort);
     api
       .employees(q.toString())
       .then((x) => {
@@ -813,6 +855,12 @@ function EmployeesPage({
   const go = (target: number) => {
     const next = Math.min(Math.max(target, 1), totalPages);
     load(next);
+  };
+  const changeSort = (key: EmployeeSortKey) => {
+    const nextDirection: SortDirection = key === sortBy && sortDirection === "asc" ? "desc" : "asc";
+    setSortBy(key);
+    setSortDirection(nextDirection);
+    load(1, undefined, requestPageSize, { sortBy: key, sortDirection: nextDirection });
   };
   const removeEmployees = async (ids: string[]) => {
     if (!ids.length || !window.confirm(`Xóa ${ids.length} nhân viên đã chọn? Hồ sơ, thành tích và minh chứng liên quan cũng sẽ bị xóa.`)) return;
@@ -1027,13 +1075,13 @@ function EmployeesPage({
                     aria-label="Chọn tất cả nhân viên trên trang"
                   />
                 </th>
-                <th>Nhân viên</th>
-                <th>CCCD</th>
-                <th>Đơn vị</th>
-                <th>Chức vụ / chức danh</th>
-                <th>Trình độ</th>
-                <th>Thành tích</th>
-                <th className="action-column">Thao tác</th>
+                <EmployeeSortableHeader label="Nhân viên" sortKey="fullName" activeKey={sortBy} direction={sortDirection} onSort={changeSort} />
+                <EmployeeSortableHeader label="CCCD" sortKey="citizenId" activeKey={sortBy} direction={sortDirection} onSort={changeSort} />
+                <EmployeeSortableHeader label="Đơn vị" sortKey="unit" activeKey={sortBy} direction={sortDirection} onSort={changeSort} />
+                <EmployeeSortableHeader label="Chức vụ / chức danh" sortKey="position" activeKey={sortBy} direction={sortDirection} onSort={changeSort} />
+                <EmployeeSortableHeader label="Trình độ" sortKey="education" activeKey={sortBy} direction={sortDirection} onSort={changeSort} />
+                <EmployeeSortableHeader label="Thành tích" sortKey="achievementCount" activeKey={sortBy} direction={sortDirection} onSort={changeSort} />
+                <EmployeeSortableHeader label="Thao tác" sortKey="updatedAt" activeKey={sortBy} direction={sortDirection} onSort={changeSort} className="action-column" title="Sắp theo lần cập nhật hồ sơ" />
               </tr>
             </thead>
             <tbody>
@@ -2022,12 +2070,11 @@ function AchievementModal({
           )}
           <label>
             {form.type === "TASK_COMPLETION" ? "Ngày đánh giá *" : "Ngày chấp nhận *"}
-            <input
-              required
-              inputMode="numeric"
+            <VietnameseDatePicker
               value={acceptedDate}
-              onChange={(e) => setAcceptedDate(e.target.value)}
-              placeholder="dd/mm/yyyy"
+              onChange={setAcceptedDate}
+              required
+              ariaLabel={form.type === "TASK_COMPLETION" ? "Ngày đánh giá" : "Ngày chấp nhận"}
             />
           </label>
           <label>
@@ -2138,10 +2185,12 @@ function VietnameseDatePicker({
   value,
   onChange,
   required = false,
+  ariaLabel = "Ngày sinh",
 }: {
   value: string;
   onChange: (value: string) => void;
   required?: boolean;
+  ariaLabel?: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const selectedIso = parseVietnameseDate(value);
@@ -2178,7 +2227,7 @@ function VietnameseDatePicker({
           onKeyDown={(event) => {
             if (event.key === "Escape") setOpen(false);
           }}
-          aria-label="Ngày sinh, định dạng ngày tháng năm"
+          aria-label={`${ariaLabel}, định dạng ngày tháng năm`}
           aria-expanded={open}
         />
         <button type="button" onClick={() => setOpen((current) => !current)} aria-label="Mở lịch chọn ngày">
@@ -2186,7 +2235,7 @@ function VietnameseDatePicker({
         </button>
       </div>
       {open && (
-        <div className="date-picker-popover" role="dialog" aria-label="Chọn ngày sinh">
+        <div className="date-picker-popover" role="dialog" aria-label={`Chọn ${ariaLabel.toLowerCase()}`}>
           <div className="date-picker-head">
             <button type="button" onClick={() => setViewMonth((current) => subMonths(current, 1))} aria-label="Tháng trước">
               <ChevronLeft size={17} />
@@ -2325,6 +2374,7 @@ function CandidatesPage({
   const [ruleModal, setRuleModal] = useState(false);
   const [selectedProposal, setSelectedProposal] = useState<Record<string, unknown> | null>(null);
   const [refreshingProposal, setRefreshingProposal] = useState<string | null>(null);
+  const [deletingProposal, setDeletingProposal] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const load = () => {
     setLoading(true);
@@ -2353,6 +2403,22 @@ function CandidatesPage({
       toast("error", error instanceof Error ? error.message : "Không thể cập nhật đề xuất.");
     } finally {
       setRefreshingProposal(null);
+    }
+  };
+  const deleteProposal = async (proposal: Record<string, unknown>) => {
+    const id = String(proposal.id);
+    const name = String(proposal.name);
+    if (!window.confirm(`Xóa đề xuất “${name}” và danh sách nhân viên đã chốt? Thao tác này không thể hoàn tác.`)) return;
+    setDeletingProposal(id);
+    try {
+      await api.deleteRewardProposal(id);
+      if (String(selectedProposal?.id ?? "") === id) setSelectedProposal(null);
+      toast("success", `Đã xóa đề xuất “${name}”.`);
+      load();
+    } catch (error) {
+      toast("error", error instanceof Error ? error.message : "Không thể xóa đề xuất.");
+    } finally {
+      setDeletingProposal(null);
     }
   };
   const years = Array.from(
@@ -2477,6 +2543,18 @@ function CandidatesPage({
                             title="Xem đề xuất"
                           >
                             <Pencil size={17} />
+                          </button>
+                          <button
+                            className="row-action delete"
+                            disabled={deletingProposal === String(proposal.id)}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void deleteProposal(proposal);
+                            }}
+                            aria-label={`Xóa đề xuất ${proposal.name}`}
+                            title="Xóa đề xuất"
+                          >
+                            {deletingProposal === String(proposal.id) ? <RefreshCw className="spin" size={17} /> : <Trash2 size={17} />}
                           </button>
                         </div>
                       </td>
