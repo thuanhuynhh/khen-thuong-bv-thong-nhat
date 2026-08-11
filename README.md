@@ -2,6 +2,12 @@
 
 Ứng dụng desktop quản lý hồ sơ thành tích và sàng lọc đề xuất khen thưởng theo CCCD. Giao diện Electron/React, API chạy trên Cloudflare Workers, dữ liệu quan hệ ở D1 và hồ sơ minh chứng ở R2.
 
+Production:
+
+- API: `https://thong-nhat-rewards-api.thuan.workers.dev`
+- GitHub: `https://github.com/thuanhuynhh/khen-thuong-bv-thong-nhat`
+- Installer: `https://github.com/thuanhuynhh/khen-thuong-bv-thong-nhat/releases/latest`
+
 ## Chức năng đã có
 
 - Đăng nhập, phiên đăng nhập và 4 vai trò: Quản trị viên, Tổ chức cán bộ, Hội đồng xét duyệt, Chỉ xem.
@@ -37,7 +43,13 @@ $body = @{
 Invoke-RestMethod http://127.0.0.1:8787/api/auth/bootstrap -Method Post -ContentType application/json -Body $body
 ```
 
-## Tạo tài nguyên Cloudflare
+## Tài nguyên Cloudflare production
+
+- D1: `thong-nhat-rewards` (`020c449d-ac0e-49f9-b872-9201f0777ab7`)
+- R2: `thong-nhat-rewards-media`
+- Worker: `thong-nhat-rewards-api`
+
+Các tài nguyên đã được tạo. Chỉ dùng các lệnh sau khi dựng account mới:
 
 ```powershell
 npx wrangler login
@@ -45,7 +57,7 @@ npx wrangler d1 create thong-nhat-rewards
 npx wrangler r2 bucket create thong-nhat-rewards-media
 ```
 
-Thay `database_id` trong `apps/api/wrangler.jsonc` bằng ID D1 thật. Cập nhật `ALLOWED_ORIGINS` với hostname Worker/app cần dùng, rồi:
+Khi dựng account khác, thay `database_id` trong `apps/api/wrangler.jsonc`. Với production hiện tại chỉ cần redeploy:
 
 ```powershell
 Set-Location apps/api
@@ -55,14 +67,13 @@ npm run db:migrate:remote
 npm run deploy:api
 ```
 
-Sao chép `apps/desktop/.env.example` thành `.env.production` và đặt `VITE_API_URL` là URL Worker đã deploy.
+Desktop production đã có fallback URL Worker thật. Có thể dùng `VITE_API_URL` để override cho staging.
 
 ## Phát hành và tự cập nhật qua GitHub
 
-1. Thay `REPLACE_GITHUB_OWNER` trong `apps/desktop/package.json` bằng GitHub owner thật.
-2. Tạo repository GitHub và push mã nguồn.
-3. Cấu hình repository variable `VITE_API_URL`.
-4. Tạo tag phiên bản trùng với `apps/desktop/package.json`, ví dụ `v0.1.0`, rồi push tag.
+1. Tăng version trong `apps/desktop/package.json`.
+2. Commit và push mã nguồn lên `main`.
+3. Tạo tag trùng version, ví dụ `v0.1.1`, rồi push tag.
 
 Workflow `desktop-release.yml` tạo NSIS installer và file `latest.yml` trên GitHub Release. `electron-updater` dùng các tệp này để tải bản mới. Với phát hành nội bộ chính thức, nên ký mã Windows bằng chứng thư code-signing trước khi phân phối.
 
