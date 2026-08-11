@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, net, protocol, shell } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, net, protocol, shell } from "electron";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 import { createRequire } from "node:module";
@@ -19,9 +19,11 @@ function sendUpdate(status: string, detail?: unknown) { mainWindow?.webContents.
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1440, height: 920, minWidth: 1100, minHeight: 700, show: false,
+    autoHideMenuBar: true,
     backgroundColor: "#f6f8fb", title: "Khen thưởng · Bệnh viện Thống Nhất",
     webPreferences: { preload: path.join(currentDir, "preload.mjs"), contextIsolation: true, nodeIntegration: false, sandbox: true }
   });
+  mainWindow.setMenuBarVisibility(false);
   mainWindow.once("ready-to-show", () => mainWindow?.show());
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith("https://")) void shell.openExternal(url);
@@ -53,6 +55,7 @@ autoUpdater.on("update-downloaded", (info) => sendUpdate("ready", { version: inf
 autoUpdater.on("error", (error) => sendUpdate("error", { message: error.message }));
 
 app.whenReady().then(() => {
+  Menu.setApplicationMenu(null);
   const rendererRoot = path.resolve(currentDir, "../dist");
   protocol.handle("app", (request) => {
     const requestUrl = new URL(request.url);

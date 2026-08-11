@@ -1,4 +1,4 @@
-import type { EmployeeInput, SessionUser } from "@thongnhat/shared";
+import type { AchievementInput, EmployeeInput, SessionUser } from "@thongnhat/shared";
 
 const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV
   ? "http://localhost:8787"
@@ -33,6 +33,11 @@ export const api = {
   options: () => request<{ units: string[]; education: string[]; positions: string[] }>("/api/employees/options"),
   createEmployee: (data: EmployeeInput) => request<{ id: string }>("/api/employees", { method: "POST", body: JSON.stringify(data) }),
   importEmployees: (rows: EmployeeInput[]) => request<{ accepted: number; rejected: number; errors: unknown[] }>("/api/employees/import", { method: "POST", body: JSON.stringify({ rows }) }),
+  createAchievement: (data: AchievementInput) => request<{ id: string }>("/api/achievements", { method: "POST", body: JSON.stringify(data) }),
+  uploadAchievementFile: (achievementId: string, file: File) => {
+    const body = new FormData(); body.append("file", file);
+    return request<{ id: string; fileName: string }>(`/api/achievements/${achievementId}/attachments`, { method: "POST", body });
+  },
   candidates: (year: number) => request<{ candidates: Array<Record<string, unknown>> }>(`/api/reward-candidates?year=${year}`),
   rewardRules: () => request<{ items: Array<Record<string, unknown>> }>("/api/reward-rules"),
   createRewardRule: (data: {

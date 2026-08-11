@@ -6,7 +6,7 @@ import {
   SlidersHorizontal, Sparkles, UploadCloud, UserRound, Users, X, Check, AlertCircle
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { achievementLevels, achievementTypes, levelLabels, typeLabels, type AchievementLevel, type AchievementType, type EmployeeInput, type SessionUser } from "@thongnhat/shared";
+import { achievementLevels, achievementTypes, levelLabels, typeLabels, type AchievementInput, type AchievementLevel, type AchievementType, type EmployeeInput, type SessionUser } from "@thongnhat/shared";
 import { api, ApiError, hasToken, setToken } from "./api";
 import { demoEmployees, recentAchievements } from "./demo";
 import hospitalLogo from "./assets/logo-bvtn.png";
@@ -46,7 +46,7 @@ export default function App() {
   }, []);
 
   if (loadingSession) return <div className="boot"><div className="brand-mark"><HospitalLogo /></div><div className="boot-line" /></div>;
-  if (!user && !demo) return <Login onLogin={setUser} onDemo={() => setDemo(true)} />;
+  if (!user && !demo) return <Login onLogin={setUser} />;
 
   const currentUser = user ?? { id: "demo", username: "demo", displayName: "Nguyễn Thanh Vân", role: "ADMIN" as const };
   const logout = async () => { if (!demo) await api.logout().catch(() => undefined); setToken(""); setUser(null); setDemo(false); };
@@ -55,7 +55,7 @@ export default function App() {
     <aside className="sidebar">
       <div className="brand">
         <div className="brand-mark"><HospitalLogo /></div>
-        {!collapsed && <div><strong>Thống Nhất</strong><span>Quản lý khen thưởng</span></div>}
+        {!collapsed && <div><strong>Bệnh viện Thống Nhất</strong><span>Quản lý khen thưởng</span></div>}
       </div>
       <nav aria-label="Điều hướng chính">
         {nav.map((section) => <div className="nav-section" key={section.group}>
@@ -81,7 +81,7 @@ export default function App() {
         </div>
       </header>
       <main id="main-content">
-        {page === "dashboard" && <Dashboard demo={demo} onNavigate={setPage} />}
+        {page === "dashboard" && <Dashboard demo={demo} displayName={currentUser.displayName} onNavigate={setPage} />}
         {page === "employees" && <EmployeesPage demo={demo} toast={toast} />}
         {page === "candidates" && <CandidatesPage demo={demo} toast={toast} />}
         {page === "import" && <ImportPage demo={demo} toast={toast} />}
@@ -93,7 +93,7 @@ export default function App() {
   </div>;
 }
 
-function Login({ onLogin, onDemo }: { onLogin: (u: SessionUser) => void; onDemo: () => void }) {
+function Login({ onLogin }: { onLogin: (u: SessionUser) => void }) {
   const [username, setUsername] = useState(""); const [password, setPassword] = useState("");
   const [error, setError] = useState(""); const [loading, setLoading] = useState(false);
   const submit = async (event: React.FormEvent) => {
@@ -110,19 +110,18 @@ function Login({ onLogin, onDemo }: { onLogin: (u: SessionUser) => void; onDemo:
       <div className="story-orbit"><span/><span/><span/></div>
     </section>
     <section className="login-panel"><form onSubmit={submit}>
-      <div className="mobile-brand"><div className="brand-mark"><HospitalLogo /></div><strong>Khen thưởng Thống Nhất</strong></div>
+      <div className="mobile-brand"><div className="brand-mark"><HospitalLogo /></div><strong>Bệnh viện Thống Nhất</strong></div>
       <span className="eyebrow teal">CỔNG NGHIỆP VỤ NỘI BỘ</span><h2>Chào mừng trở lại</h2><p className="muted">Đăng nhập bằng tài khoản được quản trị viên cấp.</p>
       {error && <div className="form-error" role="alert"><AlertCircle size={18}/>{error}</div>}
       <label>Tên đăng nhập<input autoFocus autoComplete="username" value={username} onChange={e => setUsername(e.target.value)} placeholder="Nhập tên đăng nhập" required /></label>
       <label>Mật khẩu<input type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Nhập mật khẩu" required /></label>
       <button className="primary-button full" disabled={loading}>{loading ? <><RefreshCw className="spin" size={18}/>Đang xác thực</> : <>Đăng nhập<ChevronRight size={18}/></>}</button>
-      <button className="text-button demo-link" type="button" onClick={onDemo}>Xem bản minh họa không cần máy chủ</button>
       <div className="security-note"><ShieldCheck size={19}/><span>Dữ liệu được mã hóa khi truyền và phân quyền theo vai trò.</span></div>
     </form></section>
   </div>;
 }
 
-function Dashboard({ demo, onNavigate }: { demo: boolean; onNavigate: (p: Page) => void }) {
+function Dashboard({ demo, displayName, onNavigate }: { demo: boolean; displayName:string; onNavigate: (p: Page) => void }) {
   const year = new Date().getFullYear(); const [data, setData] = useState<Record<string, unknown> | null>(null);
   useEffect(() => { if (!demo) void api.dashboard(year).then(setData).catch(() => undefined); }, [demo, year]);
   const stats = [
@@ -132,7 +131,7 @@ function Dashboard({ demo, onNavigate }: { demo: boolean; onNavigate: (p: Page) 
     { label: "Hồ sơ có thể xét", value: demo ? "86" : String(data?.candidates ?? "—"), delta: "Cần rà soát", icon: Sparkles, tone: "amber" }
   ];
   return <div className="page dashboard-page">
-    <PageTitle eyebrow={`THÁNG 08 · ${year}`} title="Chào buổi sáng, chị Vân" description="Đây là những chuyển động chính trong công tác thi đua, khen thưởng." action={<button className="primary-button" onClick={() => onNavigate("candidates")}><Sparkles size={18}/>Xem đề xuất mới</button>} />
+    <PageTitle eyebrow={`THÁNG 08 · ${year}`} title={`Chào buổi sáng, ${displayName}`} description="Đây là những chuyển động chính trong công tác thi đua, khen thưởng." action={<button className="primary-button" onClick={() => onNavigate("candidates")}><Sparkles size={18}/>Xem đề xuất mới</button>} />
     <div className="stat-grid">{stats.map(s => <article className="stat-card" key={s.label}><div className={`stat-icon ${s.tone}`}><s.icon size={21}/></div><div className="stat-meta"><span>{s.label}</span><strong>{s.value}</strong><small>{s.delta}</small></div></article>)}</div>
     <div className="dashboard-grid">
       <section className="panel activity-panel"><PanelHeader title="Nhịp độ ghi nhận" subtitle={`Thành tích được cập nhật trong ${year}`} action={<button className="ghost-button"><Download size={16}/>Xuất báo cáo</button>}/>
@@ -152,40 +151,68 @@ function Dashboard({ demo, onNavigate }: { demo: boolean; onNavigate: (p: Page) 
 }
 
 function EmployeesPage({ demo, toast }: { demo: boolean; toast: (t: Toast["type"], m: string) => void }) {
-  const [employees, setEmployees] = useState<Array<Record<string, unknown>>>(demoEmployees); const [total, setTotal] = useState(demoEmployees.length);
-  const [search, setSearch] = useState(""); const [filtersOpen, setFiltersOpen] = useState(true); const [modal, setModal] = useState(false);
-  const [unit, setUnit] = useState(""); const [level, setLevel] = useState(""); const [year, setYear] = useState("");
-  const load = () => { if (demo) return; const q = new URLSearchParams({ search, ...(unit&&{unit}), ...(level&&{achievementLevel:level}), ...(year&&{fromYear:year,toYear:year}) }); api.employees(q.toString()).then(x => { setEmployees(x.items); setTotal(x.total); }).catch(e => toast("error", e.message)); };
-  useEffect(load, [demo]);
-  const shown = demo ? employees.filter(e => String(e.fullName).toLowerCase().includes(search.toLowerCase()) || String(e.citizenId).includes(search)) : employees;
+  const pageSize=25; const [employees,setEmployees]=useState<Array<Record<string,unknown>>>(demoEmployees); const [total,setTotal]=useState(demoEmployees.length); const [page,setPage]=useState(1);
+  const [search,setSearch]=useState(""); const [filtersOpen,setFiltersOpen]=useState(true); const [modal,setModal]=useState(false); const [selectedId,setSelectedId]=useState<string|null>(null); const [units,setUnits]=useState<string[]>([]);
+  const [unit,setUnit]=useState(""); const [level,setLevel]=useState(""); const [year,setYear]=useState("");
+  const load=(targetPage=page)=>{if(demo)return;const q=new URLSearchParams({search,page:String(targetPage),pageSize:String(pageSize),...(unit&&{unit}),...(level&&{achievementLevel:level}),...(year&&{fromYear:year,toYear:year})});api.employees(q.toString()).then(x=>{setEmployees(x.items);setTotal(x.total);setPage(targetPage)}).catch(e=>toast("error",e.message))};
+  useEffect(()=>{if(demo){setUnits([...new Set(demoEmployees.map(e=>String(e.unit)))])}else{void api.options().then(x=>setUnits(x.units));load(1)}},[demo]);
+  const shown=demo?employees.filter(e=>String(e.fullName).toLowerCase().includes(search.toLowerCase())||String(e.citizenId).includes(search)):employees;
+  const effectiveTotal=demo?shown.length:total; const totalPages=Math.max(1,Math.ceil(effectiveTotal/pageSize)); const first=effectiveTotal?(page-1)*pageSize+1:0; const last=Math.min(page*pageSize,effectiveTotal);
+  const go=(target:number)=>{const next=Math.min(Math.max(target,1),totalPages);if(!demo)load(next);else setPage(next)};
   return <div className="page">
-    <PageTitle eyebrow="HỒ SƠ NHÂN SỰ" title="Danh sách nhân viên" description="Quản lý hồ sơ gốc theo CCCD và toàn bộ quá trình ghi nhận thành tích." action={<button className="primary-button" onClick={() => setModal(true)}><Plus size={18}/>Thêm nhân viên</button>} />
+    <PageTitle eyebrow="HỒ SƠ NHÂN SỰ" title="Danh sách nhân viên" description="Chọn một nhân viên để xem hồ sơ và thêm thành tích hằng năm." action={<button className="primary-button" onClick={()=>setModal(true)}><Plus size={18}/>Thêm nhân viên</button>}/>
     <section className="panel data-panel">
-      <div className="table-toolbar"><div className="search-box"><Search size={18}/><input value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>e.key==="Enter"&&load()} placeholder="Tìm theo họ tên hoặc CCCD..."/><kbd>Enter</kbd></div><button className={`filter-button ${filtersOpen?"active":""}`} onClick={()=>setFiltersOpen(!filtersOpen)}><SlidersHorizontal size={17}/>Bộ lọc chi tiết<span>3</span></button><button className="ghost-button"><Download size={17}/>Xuất Excel</button></div>
-      {filtersOpen && <div className="filter-drawer"><div className="filter-heading"><div><Filter size={17}/><strong>Điều kiện lọc</strong></div><button className="text-button" onClick={()=>{setUnit("");setLevel("");setYear("")}}>Xóa tất cả</button></div><div className="filter-grid">
-        <label>Đơn vị<select value={unit} onChange={e=>setUnit(e.target.value)}><option value="">Tất cả đơn vị</option><option>Khoa Tim mạch cấp cứu & can thiệp</option><option>Khoa Nội tổng hợp</option><option>Phòng Điều dưỡng</option></select></label>
-        <label>Loại thành tích<select><option>Tất cả loại</option><option>Đề tài khoa học</option><option>Chiến sĩ thi đua</option><option>Bằng khen</option><option>Huân chương</option></select></label>
+      <div className="table-toolbar"><div className="search-box"><Search size={18}/><input value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){setPage(1);load(1)}}} placeholder="Tìm theo họ tên hoặc CCCD..."/><kbd>Enter</kbd></div><button className={`filter-button ${filtersOpen?"active":""}`} onClick={()=>setFiltersOpen(!filtersOpen)}><SlidersHorizontal size={17}/>Bộ lọc chi tiết</button><button className="ghost-button"><Download size={17}/>Xuất Excel</button></div>
+      {filtersOpen&&<div className="filter-drawer"><div className="filter-heading"><div><Filter size={17}/><strong>Điều kiện lọc</strong></div><button className="text-button" onClick={()=>{setUnit("");setLevel("");setYear("")}}>Xóa tất cả</button></div><div className="filter-grid">
+        <label>Đơn vị<SearchableSelect value={unit} onChange={setUnit} options={units} placeholder="Tất cả đơn vị" allowClear/></label>
+        <label>Loại thành tích<select><option>Tất cả loại</option>{achievementTypes.map(type=><option key={type}>{typeLabels[type]}</option>)}</select></label>
         <label>Cấp / hạng<select value={level} onChange={e=>setLevel(e.target.value)}><option value="">Tất cả cấp</option>{achievementLevels.map(x=><option key={x} value={x}>{levelLabels[x]}</option>)}</select></label>
         <label>Năm ghi nhận<input type="number" value={year} onChange={e=>setYear(e.target.value)} placeholder="Ví dụ: 2026"/></label>
-        <button className="secondary-button apply-filter" onClick={load}>Áp dụng bộ lọc</button>
+        <button className="secondary-button apply-filter" onClick={()=>{setPage(1);load(1)}}>Áp dụng bộ lọc</button>
       </div></div>}
-      <div className="table-summary"><span><strong>{total.toLocaleString("vi-VN")}</strong> nhân viên</span><span>Cập nhật lần cuối: Hôm nay, 09:42</span></div>
-      <div className="table-scroll"><table><thead><tr><th>Nhân viên</th><th>CCCD</th><th>Đơn vị</th><th>Chức vụ / chức danh</th><th>Trình độ</th><th>Thành tích</th><th></th></tr></thead><tbody>{shown.map((e,i)=><tr key={String(e.id)}><td><div className={`person-cell avatar-tone-${i%5}`}><div className="mini-avatar">{initials(String(e.fullName))}</div><div><strong>{String(e.fullName)}</strong><span>{String(e.gender)} · {String(e.dateOfBirth)}</span></div></div></td><td className="mono">{String(e.citizenId)}</td><td><span className="unit-cell">{String(e.unit)}</span></td><td><strong className="table-main">{String(e.position)}</strong><span className="table-sub">{String(e.professionalTitle)}</span></td><td>{String(e.education)}</td><td><span className="count-pill">{String(e.achievementCount)} mục</span></td><td><button className="row-action" aria-label={`Mở hồ sơ ${e.fullName}`}><ChevronRight size={18}/></button></td></tr>)}</tbody></table></div>
-      <div className="pagination"><span>Hiển thị 1–{shown.length} trên {total.toLocaleString("vi-VN")}</span><div><button disabled>‹</button><button className="active">1</button><button>2</button><button>3</button><span>…</span><button>52</button><button>›</button></div></div>
+      <div className="table-summary"><span><strong>{effectiveTotal.toLocaleString("vi-VN")}</strong> nhân viên</span><span>Nhấn vào dòng để mở hồ sơ</span></div>
+      <div className="table-scroll"><table><thead><tr><th>Nhân viên</th><th>CCCD</th><th>Đơn vị</th><th>Chức vụ / chức danh</th><th>Trình độ</th><th>Thành tích</th><th></th></tr></thead><tbody>{shown.map((employee,index)=><tr className="clickable-row" key={String(employee.id)} tabIndex={0} onClick={()=>setSelectedId(String(employee.id))} onKeyDown={event=>{if(event.key==="Enter"||event.key===" ")setSelectedId(String(employee.id))}}><td><div className={`person-cell avatar-tone-${index%5}`}><div className="mini-avatar">{initials(String(employee.fullName))}</div><div><strong>{String(employee.fullName)}</strong><span>{genderLabel(String(employee.gender))} · {formatDate(employee.dateOfBirth)}</span></div></div></td><td className="mono">{String(employee.citizenId)}</td><td><span className="unit-cell">{String(employee.unit)}</span></td><td><strong className="table-main">{String(employee.position||"—")}</strong><span className="table-sub">{String(employee.professionalTitle||"")}</span></td><td>{String(employee.education||"—")}</td><td><span className="count-pill">{String(employee.achievementCount??0)} mục</span></td><td><button className="row-action" onClick={event=>{event.stopPropagation();setSelectedId(String(employee.id))}} aria-label={`Mở hồ sơ ${employee.fullName}`}><ChevronRight size={18}/></button></td></tr>)}</tbody></table></div>
+      <div className="pagination"><span>Hiển thị {first}–{last} trên {effectiveTotal.toLocaleString("vi-VN")}</span><div><button disabled={page<=1} onClick={()=>go(page-1)} aria-label="Trang trước">‹</button>{pageNumbers(totalPages,page).map(number=><button key={number} className={number===page?"active":""} onClick={()=>go(number)}>{number}</button>)}<button disabled={page>=totalPages} onClick={()=>go(page+1)} aria-label="Trang sau">›</button></div></div>
     </section>
-    {modal && <EmployeeModal demo={demo} onClose={()=>setModal(false)} onSaved={()=>{setModal(false);toast("success","Đã thêm hồ sơ nhân viên.");load()}} />}
+    {modal&&<EmployeeModal demo={demo} units={units} onClose={()=>setModal(false)} onSaved={()=>{setModal(false);toast("success","Đã thêm hồ sơ nhân viên.");void api.options().then(x=>setUnits(x.units));load(1)}}/>}
+    {selectedId&&<EmployeeDetailModal id={selectedId} demo={demo} fallback={shown.find(x=>String(x.id)===selectedId)} onClose={()=>setSelectedId(null)} onChanged={()=>load(page)} toast={toast}/>}
   </div>;
 }
 
-function EmployeeModal({ demo, onClose, onSaved }: { demo: boolean; onClose:()=>void; onSaved:()=>void }) {
-  const [saving,setSaving]=useState(false); const [error,setError]=useState("");
-  const [form,setForm]=useState<EmployeeInput>({citizenId:"",fullName:"",gender:"NAM",dateOfBirth:"",education:"",unit:"",position:"",professionalTitle:"",active:true});
-  const update=(k:keyof EmployeeInput,v:string|boolean)=>setForm(x=>({...x,[k]:v}));
-  const save=async(e:React.FormEvent)=>{e.preventDefault();setSaving(true);setError("");try{if(!demo)await api.createEmployee(form);onSaved()}catch(err){setError(err instanceof Error?err.message:"Không thể lưu hồ sơ.")}finally{setSaving(false)}};
-  return <div className="modal-backdrop" onMouseDown={e=>e.target===e.currentTarget&&onClose()}><form className="modal" onSubmit={save}><div className="modal-head"><div><span className="eyebrow teal">HỒ SƠ GỐC</span><h2>Thêm nhân viên</h2><p>CCCD là mã định danh duy nhất và không được trùng.</p></div><button type="button" className="icon-button" onClick={onClose}><X/></button></div>{error&&<div className="form-error">{error}</div>}<div className="form-grid">
-    <label className="span-2">Họ và tên *<input required value={form.fullName} onChange={e=>update("fullName",e.target.value)} /></label><label>CCCD *<input required inputMode="numeric" pattern="\d{9,12}" value={form.citizenId} onChange={e=>update("citizenId",e.target.value)} /></label><label>Giới tính<select value={form.gender} onChange={e=>update("gender",e.target.value)}><option value="NAM">Nam</option><option value="NU">Nữ</option><option value="KHAC">Khác</option></select></label>
-    <label>Ngày sinh *<input required type="date" value={form.dateOfBirth} onChange={e=>update("dateOfBirth",e.target.value)} /></label><label>Trình độ<input value={form.education} onChange={e=>update("education",e.target.value)} /></label><label className="span-2">Đơn vị *<input required value={form.unit} onChange={e=>update("unit",e.target.value)} /></label><label>Chức vụ<input value={form.position} onChange={e=>update("position",e.target.value)} /></label><label>Chức danh nghề nghiệp<input value={form.professionalTitle} onChange={e=>update("professionalTitle",e.target.value)} /></label>
+function EmployeeModal({demo,units,onClose,onSaved}:{demo:boolean;units:string[];onClose:()=>void;onSaved:()=>void}){
+  const [saving,setSaving]=useState(false);const[error,setError]=useState("");const[birthDate,setBirthDate]=useState("");
+  const[form,setForm]=useState<EmployeeInput>({citizenId:"",fullName:"",gender:"NAM",dateOfBirth:"",education:"",unit:"",position:"",professionalTitle:"",active:true});
+  const update=(key:keyof EmployeeInput,value:string|boolean)=>setForm(current=>({...current,[key]:value}));
+  const save=async(event:React.FormEvent)=>{event.preventDefault();setError("");const iso=parseVietnameseDate(birthDate);if(!iso){setError("Ngày sinh phải đúng định dạng dd/mm/yyyy.");return}setSaving(true);try{if(!demo)await api.createEmployee({...form,dateOfBirth:iso});onSaved()}catch(err){setError(err instanceof Error?err.message:"Không thể lưu hồ sơ.")}finally{setSaving(false)}};
+  return <div className="modal-backdrop" onMouseDown={event=>event.target===event.currentTarget&&onClose()}><form className="modal employee-form-modal" onSubmit={save}><div className="modal-head"><div><span className="eyebrow teal">HỒ SƠ GỐC</span><h2>Thêm nhân viên</h2><p>CCCD là mã định danh duy nhất và không được trùng.</p></div><button type="button" className="icon-button" onClick={onClose} aria-label="Đóng"><X/></button></div>{error&&<div className="form-error" role="alert">{error}</div>}<div className="form-grid">
+    <label className="span-2">Họ và tên *<input required value={form.fullName} onChange={e=>update("fullName",e.target.value)}/></label><label>CCCD *<input required inputMode="numeric" pattern="\d{9,12}" value={form.citizenId} onChange={e=>update("citizenId",e.target.value)}/></label><label>Giới tính<select value={form.gender} onChange={e=>update("gender",e.target.value)}><option value="NAM">Nam</option><option value="NU">Nữ</option><option value="KHAC">Khác</option></select></label>
+    <label>Ngày sinh *<input required inputMode="numeric" value={birthDate} onChange={e=>setBirthDate(e.target.value)} placeholder="dd/mm/yyyy"/></label><label>Trình độ<input value={form.education} onChange={e=>update("education",e.target.value)}/></label><label className="span-2">Đơn vị *<SearchableSelect required value={form.unit} onChange={value=>update("unit",value)} options={units} placeholder="Tìm hoặc nhập đơn vị mới"/></label><label>Chức vụ<input value={form.position} onChange={e=>update("position",e.target.value)}/></label><label>Chức danh nghề nghiệp<input value={form.professionalTitle} onChange={e=>update("professionalTitle",e.target.value)}/></label>
   </div><div className="modal-actions"><button type="button" className="ghost-button" onClick={onClose}>Hủy</button><button className="primary-button" disabled={saving}>{saving&&<RefreshCw className="spin" size={17}/>}Lưu hồ sơ</button></div></form></div>;
+}
+
+function EmployeeDetailModal({id,demo,fallback,onClose,onChanged,toast}:{id:string;demo:boolean;fallback?:Record<string,unknown>;onClose:()=>void;onChanged:()=>void;toast:(t:Toast["type"],m:string)=>void}){
+  const[employee,setEmployee]=useState<Record<string,unknown>|null>(demo?(fallback??null):null);const[loading,setLoading]=useState(!demo);const[achievementModal,setAchievementModal]=useState(false);
+  const load=()=>{if(demo){setEmployee(fallback??null);return}setLoading(true);api.employee(id).then(setEmployee).catch(error=>toast("error",error.message)).finally(()=>setLoading(false))};
+  useEffect(load,[id,demo]);const achievements=(employee?.achievements as Array<Record<string,unknown>>|undefined)??[];
+  return <div className="modal-backdrop" onMouseDown={event=>event.target===event.currentTarget&&onClose()}><section className="modal employee-detail-modal" aria-label="Chi tiết hồ sơ nhân viên"><div className="modal-head"><div><span className="eyebrow teal">HỒ SƠ NHÂN VIÊN</span><h2>{loading?"Đang tải...":String(employee?.fullName??"Không tìm thấy hồ sơ")}</h2><p>{employee?`${String(employee.citizenId)} · ${genderLabel(String(employee.gender))} · ${formatDate(employee.dateOfBirth)}`:""}</p></div><button type="button" className="icon-button" onClick={onClose} aria-label="Đóng"><X/></button></div>{employee&&<><div className="employee-profile-grid"><div><span>Đơn vị</span><strong>{String(employee.unit||"—")}</strong></div><div><span>Chức vụ</span><strong>{String(employee.position||"—")}</strong></div><div><span>Chức danh nghề nghiệp</span><strong>{String(employee.professionalTitle||"—")}</strong></div><div><span>Trình độ</span><strong>{String(employee.education||"—")}</strong></div></div><div className="achievement-section"><div className="achievement-section-head"><div><h3>Thành tích đã ghi nhận</h3><p>{achievements.length} mục trong hồ sơ</p></div><button className="primary-button" onClick={()=>setAchievementModal(true)}><Plus size={17}/>Thêm thành tích</button></div>{achievements.length?<div className="achievement-records">{achievements.map(item=><article key={String(item.id)}><div className="achievement-record-icon"><Award size={19}/></div><div><strong>{String(item.title)}</strong><span>{typeLabels[item.type as AchievementType]} · {levelLabels[item.level as AchievementLevel]}</span><small>{formatDate(item.acceptedDate)} · {String(item.organization||"Không ghi đơn vị")}</small></div><span className="year-pill">{String(item.year)}</span></article>)}</div>:<div className="empty-achievements"><FileCheck2/><strong>Chưa có thành tích</strong><span>Chọn “Thêm thành tích” để bắt đầu hồ sơ khen thưởng.</span></div>}</div></>}{achievementModal&&employee&&<AchievementModal employeeId={id} employeeName={String(employee.fullName)} demo={demo} onClose={()=>setAchievementModal(false)} onSaved={()=>{setAchievementModal(false);toast("success","Đã thêm thành tích và minh chứng.");load();onChanged()}}/>}</section></div>;
+}
+
+function AchievementModal({employeeId,employeeName,demo,onClose,onSaved}:{employeeId:string;employeeName:string;demo:boolean;onClose:()=>void;onSaved:()=>void}){
+  const input=useRef<HTMLInputElement>(null);const[saving,setSaving]=useState(false);const[error,setError]=useState("");const[acceptedDate,setAcceptedDate]=useState("");const[files,setFiles]=useState<File[]>([]);const[drag,setDrag]=useState(false);
+  const[form,setForm]=useState<AchievementInput>({employeeId,type:"RESEARCH",level:"CO_SO",title:"",acceptedDate:"",year:new Date().getFullYear(),organization:"",decisionNumber:"",role:"",notes:""});
+  const update=(key:keyof AchievementInput,value:string|number)=>setForm(current=>({...current,[key]:value}));const addFiles=(list:FileList|null)=>{if(list)setFiles(current=>[...current,...Array.from(list)].slice(0,10))};
+  const save=async(event:React.FormEvent)=>{event.preventDefault();setError("");const iso=parseVietnameseDate(acceptedDate);if(!iso){setError("Ngày chấp nhận phải đúng định dạng dd/mm/yyyy.");return}setSaving(true);try{if(!demo){const result=await api.createAchievement({...form,acceptedDate:iso,year:Number(iso.slice(0,4))});for(const file of files)await api.uploadAchievementFile(result.id,file)}onSaved()}catch(err){setError(err instanceof Error?err.message:"Không thể lưu thành tích.")}finally{setSaving(false)}};
+  return <div className="modal-backdrop nested-modal" onMouseDown={event=>event.target===event.currentTarget&&onClose()}><form className="modal achievement-modal" onSubmit={save}><div className="modal-head"><div><span className="eyebrow teal">THÀNH TÍCH HẰNG NĂM</span><h2>Thêm thành tích</h2><p>{employeeName}</p></div><button type="button" className="icon-button" onClick={onClose} aria-label="Đóng"><X/></button></div>{error&&<div className="form-error" role="alert"><AlertCircle size={18}/>{error}</div>}<div className="form-grid">
+    <label>Loại thành tích<select value={form.type} onChange={e=>update("type",e.target.value)}>{achievementTypes.map(type=><option key={type} value={type}>{typeLabels[type]}</option>)}</select></label><label>Cấp / hạng<select value={form.level} onChange={e=>update("level",e.target.value)}>{achievementLevels.map(level=><option key={level} value={level}>{levelLabels[level]}</option>)}</select></label>
+    <label className="span-2">Tên đề tài / thành tích *<input required value={form.title} onChange={e=>update("title",e.target.value)}/></label><label>Ngày chấp nhận *<input required inputMode="numeric" value={acceptedDate} onChange={e=>setAcceptedDate(e.target.value)} placeholder="dd/mm/yyyy"/></label><label>Số quyết định<input value={form.decisionNumber} onChange={e=>update("decisionNumber",e.target.value)}/></label>
+    <label>Đơn vị thực hiện<input value={form.organization} onChange={e=>update("organization",e.target.value)}/></label><label>Vai trò<input value={form.role} onChange={e=>update("role",e.target.value)} placeholder="Chủ nhiệm, thành viên..."/></label><label className="span-2">Ghi chú<textarea value={form.notes} onChange={e=>update("notes",e.target.value)} rows={3}/></label>
+    <div className={`achievement-dropzone span-2 ${drag?"dragging":""}`} onDragOver={e=>{e.preventDefault();setDrag(true)}} onDragLeave={()=>setDrag(false)} onDrop={e=>{e.preventDefault();setDrag(false);addFiles(e.dataTransfer.files)}}><input ref={input} type="file" hidden multiple accept=".pdf,.jpg,.jpeg,.png,.webp" onChange={e=>addFiles(e.target.files)}/><UploadCloud/><div><strong>Kéo thả minh chứng vào đây</strong><span>PDF, JPG, PNG, WebP · tối đa 25 MB/tệp</span></div><button type="button" className="secondary-button" onClick={()=>input.current?.click()}>Chọn tệp</button></div>{files.length>0&&<div className="selected-files span-2">{files.map((file,index)=><span key={`${file.name}-${index}`}><FileCheck2 size={14}/>{file.name}<button type="button" onClick={()=>setFiles(current=>current.filter((_,i)=>i!==index))} aria-label={`Bỏ tệp ${file.name}`}><X size={13}/></button></span>)}</div>}
+  </div><div className="modal-actions"><button type="button" className="ghost-button" onClick={onClose}>Hủy</button><button className="primary-button" disabled={saving}>{saving&&<RefreshCw className="spin" size={17}/>}Lưu thành tích</button></div></form></div>;
+}
+
+function SearchableSelect({value,onChange,options,placeholder,required=false,allowClear=false}:{value:string;onChange:(value:string)=>void;options:string[];placeholder:string;required?:boolean;allowClear?:boolean}){
+  const[open,setOpen]=useState(false);const filtered=options.filter(option=>!value||normalize(option).includes(normalize(value))).slice(0,30);
+  return <div className="searchable-select"><div className="searchable-control"><Search size={16}/><input required={required} role="combobox" aria-expanded={open} aria-autocomplete="list" value={value} onFocus={()=>setOpen(true)} onBlur={()=>window.setTimeout(()=>setOpen(false),120)} onChange={event=>{onChange(event.target.value);setOpen(true)}} placeholder={placeholder}/>{allowClear&&value&&<button type="button" onMouseDown={event=>event.preventDefault()} onClick={()=>onChange("")} aria-label="Xóa đơn vị"><X size={15}/></button>}</div>{open&&filtered.length>0&&<div className="searchable-options" role="listbox">{filtered.map(option=><button type="button" role="option" aria-selected={option===value} key={option} onMouseDown={event=>event.preventDefault()} onClick={()=>{onChange(option);setOpen(false)}}>{option}</button>)}</div>}</div>;
 }
 
 function CandidatesPage({ demo, toast }: { demo:boolean; toast:(t:Toast["type"],m:string)=>void }) {
@@ -225,7 +252,7 @@ function ImportPage({ demo, toast }: { demo:boolean; toast:(t:Toast["type"],m:st
   return <div className="page"><PageTitle eyebrow="NHẬP DỮ LIỆU HÀNG LOẠT" title="Nhập hồ sơ từ Excel" description="Hệ thống đối chiếu CCCD để tự động thêm mới hoặc cập nhật hồ sơ hiện có." action={<button className="ghost-button"><Download size={17}/>Tải file mẫu</button>}/>
     <div className="import-steps"><div className="done"><span>1</span><div><strong>Chọn tệp</strong><small>.xlsx hoặc .xls</small></div></div><i/><div className={rows.length?"done":""}><span>2</span><div><strong>Kiểm tra dữ liệu</strong><small>Ánh xạ và xác thực</small></div></div><i/><div><span>3</span><div><strong>Hoàn tất</strong><small>Cập nhật vào CSDL</small></div></div></div>
     {!file?<div className={`dropzone ${drag?"dragging":""}`} onDragOver={e=>{e.preventDefault();setDrag(true)}} onDragLeave={()=>setDrag(false)} onDrop={e=>{e.preventDefault();setDrag(false);const f=e.dataTransfer.files[0];if(f)void parse(f)}}><input ref={input} type="file" accept=".xlsx,.xls" hidden onChange={e=>{const f=e.target.files?.[0];if(f)void parse(f)}}/><div className="upload-icon"><UploadCloud/></div><h3>Kéo và thả tệp Excel vào đây</h3><p>hoặc chọn tệp từ máy tính · tối đa 10 MB</p><button className="secondary-button" onClick={()=>input.current?.click()}>Chọn tệp Excel</button><div className="drop-hint"><FileCheck2 size={16}/>Các cột bắt buộc: CCCD, Họ tên, Giới tính, Ngày sinh, Đơn vị</div></div>:
-    <section className="panel preview-panel"><div className="file-summary"><div className="excel-icon"><FileSpreadsheet/></div><div><strong>{file.name}</strong><span>{(file.size/1024).toFixed(1)} KB · {rows.length} dòng dữ liệu</span></div><span className="valid-badge"><Check/>Sẵn sàng nhập</span><button className="icon-button" onClick={()=>{setFile(null);setRows([])}}><X/></button></div><div className="table-scroll"><table><thead><tr><th>#</th><th>CCCD</th><th>Họ và tên</th><th>Giới tính</th><th>Ngày sinh</th><th>Đơn vị</th></tr></thead><tbody>{rows.slice(0,8).map((r,i)=><tr key={i}><td>{i+1}</td><td className="mono">{r.citizenId}</td><td><strong>{r.fullName}</strong></td><td>{r.gender}</td><td>{r.dateOfBirth}</td><td>{r.unit}</td></tr>)}</tbody></table></div><div className="import-actions"><span>CCCD trùng sẽ được cập nhật, không tạo bản ghi mới.</span><button className="primary-button" onClick={()=>void upload()} disabled={loading}>{loading?<RefreshCw className="spin" size={17}/>:<UploadCloud size={17}/>}Nhập {rows.length} hồ sơ</button></div></section>}
+    <section className="panel preview-panel"><div className="file-summary"><div className="excel-icon"><FileSpreadsheet/></div><div><strong>{file.name}</strong><span>{(file.size/1024).toFixed(1)} KB · {rows.length} dòng dữ liệu</span></div><span className="valid-badge"><Check/>Sẵn sàng nhập</span><button className="icon-button" onClick={()=>{setFile(null);setRows([])}}><X/></button></div><div className="table-scroll"><table><thead><tr><th>#</th><th>CCCD</th><th>Họ và tên</th><th>Giới tính</th><th>Ngày sinh</th><th>Đơn vị</th></tr></thead><tbody>{rows.slice(0,8).map((r,i)=><tr key={i}><td>{i+1}</td><td className="mono">{r.citizenId}</td><td><strong>{r.fullName}</strong></td><td>{genderLabel(r.gender)}</td><td>{formatDate(r.dateOfBirth)}</td><td>{r.unit}</td></tr>)}</tbody></table></div><div className="import-actions"><span>CCCD trùng sẽ được cập nhật, không tạo bản ghi mới.</span><button className="primary-button" onClick={()=>void upload()} disabled={loading}>{loading?<RefreshCw className="spin" size={17}/>:<UploadCloud size={17}/>}Nhập {rows.length} hồ sơ</button></div></section>}
   </div>;
 }
 
@@ -238,5 +265,9 @@ function PanelHeader({title,subtitle,action}:{title:string;subtitle:string;actio
 function HospitalLogo(){return <img className="hospital-logo" src={hospitalLogo} width="148" height="148" alt="Logo Bệnh viện Thống Nhất"/>}
 function initials(name:string){return name.trim().split(/\s+/).slice(-2).map(x=>x[0]).join("").toUpperCase()}
 function roleLabel(role:string){return ({ADMIN:"Quản trị viên",HR:"Tổ chức cán bộ",REVIEWER:"Hội đồng xét duyệt",VIEWER:"Chỉ xem"} as Record<string,string>)[role]??role}
+function genderLabel(gender:string){return ({NAM:"Nam",NU:"Nữ",KHAC:"Khác"} as Record<string,string>)[gender]??gender}
+function formatDate(value:unknown){const text=String(value??"").slice(0,10);const match=text.match(/^(\d{4})-(\d{2})-(\d{2})$/);return match?`${match[3]}/${match[2]}/${match[1]}`:(text||"—")}
+function parseVietnameseDate(value:string){const match=value.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);if(!match)return null;const day=Number(match[1]),month=Number(match[2]),year=Number(match[3]);const date=new Date(Date.UTC(year,month-1,day));if(date.getUTCFullYear()!==year||date.getUTCMonth()!==month-1||date.getUTCDate()!==day)return null;return `${match[3]}-${match[2]}-${match[1]}`}
+function pageNumbers(total:number,current:number){if(total<=5)return Array.from({length:total},(_,index)=>index+1);const start=Math.max(1,Math.min(current-2,total-4));return Array.from({length:5},(_,index)=>start+index)}
 function normalize(v:string){return v.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim()}
 function excelDate(v:unknown){if(v instanceof Date)return v.toISOString().slice(0,10);const s=String(v??"").trim();const m=s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);return m?`${m[3]}-${m[2]!.padStart(2,"0")}-${m[1]!.padStart(2,"0")}`:s}

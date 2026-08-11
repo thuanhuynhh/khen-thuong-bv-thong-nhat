@@ -1,6 +1,6 @@
 {
   "name": "@thongnhat/desktop",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Ứng dụng quản lý thành tích và khen thưởng Bệnh viện Thống Nhất",
   "author": "Bệnh viện Thống Nhất",
   "private": true,
