@@ -424,6 +424,7 @@ app.get("/api/reward-candidates", async (c) => {
   }
   const proposals = rules.results.map((rule) => ({
     id: rule.id, name: rule.name, rewardType: rule.reward_type, rewardLevel: rule.reward_level,
+    priority: rule.priority,
     year: rule.evaluation_year, conditions: normalizeRewardConditions(JSON.parse(String(rule.conditions_json))),
     snapshotUpdatedAt: rule.snapshot_updated_at, employees: employeesByProposal.get(String(rule.id)) ?? []
   }));

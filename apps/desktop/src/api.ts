@@ -62,6 +62,18 @@ export const api = {
     priority: number;
   }) => request<{ id: string }>("/api/reward-rules", { method: "POST", body: JSON.stringify(data) }),
   refreshRewardProposal: (id: string) => request<{ ok: true; employees: number }>(`/api/reward-rules/${id}/refresh`, { method: "POST" }),
+  updateRewardProposal: (id: string, data: {
+    name: string;
+    rewardType: string;
+    rewardLevel: string;
+    conditions: {
+      operator: "AND" | "OR";
+      exactLevel: boolean;
+      groups: Array<{ operator: "AND" | "OR"; conditions: Array<{ type: string; level: string; quantity: number; withinYears: number }> }>;
+    };
+    priority: number;
+    active: boolean;
+  }) => request<{ ok: true }>(`/api/reward-rules/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   deleteRewardProposal: (id: string) => request<{ ok: true }>(`/api/reward-rules/${id}`, { method: "DELETE" }),
   users: () => request<{ items: UserRecord[]; counts: UserCounts }>("/api/users"),
   createUser: (data: { username: string; displayName: string; role: Role; password: string }) => request<{ id: string }>("/api/users", { method: "POST", body: JSON.stringify(data) }),

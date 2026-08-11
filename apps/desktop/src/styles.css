@@ -141,3 +141,6 @@ a.ghost-button{text-decoration:none}.import-overwrite-option{display:flex;align-
 
 /* Server-backed employee sorting. */
 th.sortable-column{padding:0}th.sortable-column>button{width:100%;min-height:44px;display:flex;align-items:center;gap:6px;padding:10px 12px;border:0;background:transparent;color:inherit;font:inherit;font-weight:inherit;text-align:left;white-space:nowrap;cursor:pointer}th.sortable-column>button:hover{color:#006fe6;background:#f2f8ff}th.sortable-column.active>button{color:#006fe6}th.sortable-column.action-column>button{justify-content:flex-end}.proposal-row-actions .row-action.delete:hover{border-color:#f1cbc7;background:#fff3f2;color:#c2382b}
+
+/* Keep every employee filter control on one 44px baseline. */
+.filter-grid select,.filter-grid>label>input,.filter-grid .searchable-control,.filter-grid .apply-filter,.filter-grid .clear-filters{height:44px;min-height:44px}

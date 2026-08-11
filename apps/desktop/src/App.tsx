@@ -31,6 +31,7 @@ import {
   ChevronsRight,
   CircleHelp,
   Download,
+  Eye,
   FileCheck2,
   FileSpreadsheet,
   LayoutDashboard,
@@ -100,6 +101,9 @@ type UpdateState = {
 
 type EmployeeSortKey = "fullName" | "citizenId" | "unit" | "position" | "education" | "achievementCount" | "updatedAt";
 type SortDirection = "asc" | "desc";
+type RewardCondition = { type: AchievementType | ""; level: AchievementLevel | ""; quantity: number; withinYears: number };
+type RewardConditionGroup = { operator: "AND" | "OR"; conditions: RewardCondition[] };
+type RewardConditions = { operator: "AND" | "OR"; exactLevel: boolean; groups: RewardConditionGroup[] };
 
 const nav: Array<{
   group: string;
@@ -2372,6 +2376,7 @@ function CandidatesPage({
     [],
   );
   const [ruleModal, setRuleModal] = useState(false);
+  const [editingProposal, setEditingProposal] = useState<Record<string, unknown> | null>(null);
   const [selectedProposal, setSelectedProposal] = useState<Record<string, unknown> | null>(null);
   const [refreshingProposal, setRefreshingProposal] = useState<string | null>(null);
   const [deletingProposal, setDeletingProposal] = useState<string | null>(null);
@@ -2446,7 +2451,10 @@ function CandidatesPage({
             </label>
             <button
               className="primary-button"
-              onClick={() => setRuleModal(true)}
+              onClick={() => {
+                setEditingProposal(null);
+                setRuleModal(true);
+              }}
             >
               <Plus size={18} />
               Tạo đề xuất
@@ -2542,6 +2550,18 @@ function CandidatesPage({
                             aria-label={`Xem đề xuất ${proposal.name}`}
                             title="Xem đề xuất"
                           >
+                            <Eye size={17} />
+                          </button>
+                          <button
+                            className="row-action"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setEditingProposal(proposal);
+                              setRuleModal(true);
+                            }}
+                            aria-label={`Sửa đề xuất ${proposal.name}`}
+                            title="Sửa điều kiện đề xuất"
+                          >
                             <Pencil size={17} />
                           </button>
                           <button
@@ -2575,10 +2595,15 @@ function CandidatesPage({
       {ruleModal && (
         <RewardRuleModal
           year={year}
-          onClose={() => setRuleModal(false)}
+          initialProposal={editingProposal ?? undefined}
+          onClose={() => {
+            setRuleModal(false);
+            setEditingProposal(null);
+          }}
           onSaved={() => {
             setRuleModal(false);
-            toast("success", "Đã tạo đề xuất khen thưởng.");
+            toast("success", editingProposal ? "Đã sửa điều kiện đề xuất; danh sách đã chốt được giữ nguyên." : "Đã tạo đề xuất khen thưởng.");
+            setEditingProposal(null);
             load();
           }}
         />
@@ -2743,44 +2768,43 @@ function ProposalDetailModal({
 
 function RewardRuleModal({
   year,
+  initialProposal,
   onClose,
   onSaved,
 }: {
   year: number;
+  initialProposal?: Record<string, unknown>;
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [name, setName] = useState("");
-  const [rewardType, setRewardType] = useState<RewardType | "">("");
-  const [rewardLevel, setRewardLevel] = useState<AchievementLevel | "">("");
-  const [priority, setPriority] = useState(100);
-  const [exactLevel, setExactLevel] = useState(false);
-  type Condition = {
-    type: AchievementType | "";
-    level: AchievementLevel | "";
-    quantity: number;
-    withinYears: number;
-  };
-  type Group = { operator: "AND" | "OR"; conditions: Condition[] };
-  const makeCondition = (): Condition => ({
+  const initialConditions = initialProposal?.conditions as RewardConditions | undefined;
+  const editing = Boolean(initialProposal);
+  const makeCondition = (): RewardCondition => ({
     type: "",
     level: "",
     quantity: 1,
     withinYears: 0,
   });
-  const [operator, setOperator] = useState<"AND" | "OR">("AND");
-  const [groups, setGroups] = useState<Group[]>([
-    {
-      operator: "AND",
-      conditions: [makeCondition()],
-    },
-  ]);
+  const [name, setName] = useState(() => String(initialProposal?.name ?? ""));
+  const [rewardType, setRewardType] = useState<RewardType | "">(() => initialProposal ? initialProposal.rewardType as RewardType : "");
+  const [rewardLevel, setRewardLevel] = useState<AchievementLevel | "">(() => initialProposal ? initialProposal.rewardLevel as AchievementLevel : "");
+  const [priority, setPriority] = useState(() => Number(initialProposal?.priority ?? 100));
+  const [exactLevel, setExactLevel] = useState(() => Boolean(initialConditions?.exactLevel));
+  const [operator, setOperator] = useState<"AND" | "OR">(() => initialConditions?.operator ?? "AND");
+  const [groups, setGroups] = useState<RewardConditionGroup[]>(() =>
+    initialConditions?.groups?.length
+      ? initialConditions.groups.map((group) => ({
+          operator: group.operator,
+          conditions: group.conditions.map((condition) => ({ ...condition })),
+        }))
+      : [{ operator: "AND", conditions: [makeCondition()] }],
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const updateCondition = (
     groupIndex: number,
     index: number,
-    key: keyof Condition,
+    key: keyof RewardCondition,
     value: string | number,
   ) =>
     setGroups((current) =>
@@ -2823,17 +2847,21 @@ function RewardRuleModal({
     }
     setSaving(true);
     try {
-      await api.createRewardRule({
+      const payload = {
         name,
         rewardType,
         rewardLevel,
-        year,
         conditions: { operator, exactLevel, groups },
         priority,
-      });
+      };
+      if (initialProposal) {
+        await api.updateRewardProposal(String(initialProposal.id), { ...payload, active: true });
+      } else {
+        await api.createRewardRule({ ...payload, year });
+      }
       onSaved();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Không thể tạo đề xuất.");
+      setError(err instanceof Error ? err.message : editing ? "Không thể sửa đề xuất." : "Không thể tạo đề xuất.");
     } finally {
       setSaving(false);
     }
@@ -2846,10 +2874,10 @@ function RewardRuleModal({
       <form className="modal rule-modal" onSubmit={save}>
         <div className="modal-head">
           <div>
-            <span className="eyebrow teal">ĐỀ XUẤT MỚI</span>
-            <h2>Tạo đề xuất khen thưởng</h2>
+            <span className="eyebrow teal">{editing ? "CHỈNH SỬA ĐỀ XUẤT" : "ĐỀ XUẤT MỚI"}</span>
+            <h2>{editing ? "Sửa điều kiện đề xuất" : "Tạo đề xuất khen thưởng"}</h2>
             <p>
-              Chọn nội dung khen thưởng, sau đó thiết lập điều kiện xét.
+              {editing ? "Thay đổi tiêu chuẩn xét; danh sách nhân viên đã chốt chỉ đổi khi bấm nút cập nhật." : "Chọn nội dung khen thưởng, sau đó thiết lập điều kiện xét."}
             </p>
           </div>
           <button
@@ -3145,7 +3173,7 @@ function RewardRuleModal({
             Hủy
           </button>
           <button className="primary-button" disabled={saving}>
-            {saving && <RefreshCw className="spin" size={17} />}Lưu đề xuất
+            {saving && <RefreshCw className="spin" size={17} />}{editing ? "Lưu thay đổi" : "Lưu đề xuất"}
           </button>
         </div>
       </form>
